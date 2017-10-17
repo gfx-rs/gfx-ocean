@@ -3,9 +3,9 @@
     <br>
 </h1>
 
-<h4 align="center">`gfx_hal` demo for simulating a FFT [ocean](https://i.imgur.com/AQIxWod.gifv) using compute shaders.</h4>
+<h4 align="center">`gfx_hal` demo for simulating a FFT <a href="https://i.imgur.com/AQIxWod.mp4">ocean</a> using compute shaders.</h4>
 
-## Running
+## Running :ocean:
 
 - Vulkan: `cargo run --features vulkan`
 - D3D12: `cargo run --features dx12`
