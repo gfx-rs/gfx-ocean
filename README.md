@@ -3,7 +3,11 @@
     <br>
 </h1>
 
-<h4 align="center">`gfx_hal` demo for simulating a FFT <a href="https://i.imgur.com/AQIxWod.mp4">ocean</a> using compute shaders.</h4>
+<h4 align="center">
+`gfx_hal` demo for simulating a FFT <a href="https://i.imgur.com/AQIxWod.mp4">ocean</a> using compute shaders.
+<br>
+<img src="https://i.imgur.com/H28o5rP.png">
+</h4>
 
 ## Running :ocean:
 
