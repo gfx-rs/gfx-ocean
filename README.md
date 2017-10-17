@@ -5,7 +5,7 @@
 
 <h4 align="center">
 `gfx_hal` demo for simulating a FFT <a href="https://i.imgur.com/AQIxWod.mp4">ocean</a> using compute shaders.
-<br>
+<br><br>
 <img src="https://i.imgur.com/H28o5rP.png">
 </h4>
 
