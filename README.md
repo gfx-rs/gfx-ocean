@@ -10,3 +10,7 @@
 - Vulkan: `cargo run --features vulkan`
 - D3D12: `cargo run --features dx12`
 - Metal: WIP
+
+## Camera Controls
+- Forwards/Backwards: `W`/`S`
+- Pitch/Yaw: Arrow Keys
