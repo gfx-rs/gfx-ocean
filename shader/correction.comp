@@ -1,0 +1,35 @@
+#version 450
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+uniform layout(std430);
+
+layout(binding = 0) uniform Locals {
+    uint resolution;
+};
+
+layout(std430, binding = 1) buffer wave_height {
+    vec2 height[];
+};
+
+layout(std430, binding = 2) buffer wave_disp_x {
+    vec2 disp_x[];
+};
+
+layout(std430, binding = 3) buffer wave_disp_z {
+    vec2 disp_z[];
+};
+
+layout(rgba32f, binding = 4) uniform writeonly image2D destTex;
+
+void main() {
+    uint index = gl_GlobalInvocationID.x + resolution * gl_GlobalInvocationID.y;
+
+    // applying fft over the range [-N/2; N/2] instead of [0; N] requires an additional transformation step
+    // for each texel (i, j) with (i + j) the sign is inverted
+    float sign_mul = (gl_GlobalInvocationID.x + gl_GlobalInvocationID.y) % 2 == 0 ? -1.0 : 1.0;
+
+    vec3 displacement = vec3(disp_x[index].x, height[index].x, disp_z[index].x) * sign_mul;
+
+    ivec2 storePos = ivec2(gl_GlobalInvocationID.xy);
+    imageStore(destTex, storePos, vec4(displacement, 0.0));
+}

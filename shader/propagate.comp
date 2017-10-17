@@ -1,0 +1,73 @@
+#version 450
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+uniform layout(std430);
+
+const float pi = 3.1415926;
+
+vec2 complex_add(vec2 c0, vec2 c1) {
+    return vec2(c0.x+c1.x, c0.y+c1.y);
+}
+
+vec2 complex_mul(vec2 c0, vec2 c1) {
+    return vec2(c0.x*c1.x - c0.y*c1.y, c0.y*c1.x + c0.x*c1.y);
+}
+
+layout(binding = 0) uniform Locals {
+    float time;
+    int resolution;
+    float domain_size;
+};
+
+layout(std430, set = 0, binding = 1) buffer buffer_height_init_spec {
+    vec2 height_init_spec[];
+};
+
+layout(std430, binding = 2) buffer buffer_dispersion {
+    float omega[];
+};
+
+layout(std430, binding = 3) buffer buffer_height_spec {
+    vec2 height_spec[];
+};
+
+layout(std430, binding = 4) buffer buffer_disp_x_spec {
+    vec2 disp_x_spec[];
+};
+
+layout(std430, binding = 5) buffer buffer_disp_z_spec {
+    vec2 disp_z_spec[];
+};
+
+void main() {
+    uint index = gl_GlobalInvocationID.x + resolution * gl_GlobalInvocationID.y;
+
+    uint x = 2 * gl_GlobalInvocationID.x - resolution - 1;
+    uint y = 2 * gl_GlobalInvocationID.y - resolution - 1;
+
+    uint index_neg = (resolution-gl_GlobalInvocationID.y-1) * resolution + resolution-gl_GlobalInvocationID.x-1;
+
+    vec2 k = vec2(
+        pi * float(x) / domain_size,
+        pi * float(y) / domain_size
+    );
+
+    float disp = omega[index] * time;
+    vec2 disp_pos = vec2(cos(disp), sin(disp));
+    vec2 disp_neg = vec2(cos(disp), -sin(disp));
+
+    vec2 h_spec = complex_add(
+            complex_mul(height_init_spec[index], disp_pos),
+            complex_mul(height_init_spec[index_neg], disp_neg)
+          );
+
+    vec2 k_norm = vec2(0.0, 0.0);
+    if(length(k) > 1.0e-10) {
+      k_norm = k / length(k);
+    }
+
+    height_spec[index] = h_spec;
+    disp_x_spec[index] = complex_mul(vec2(0.0, -k_norm.x), h_spec);
+    disp_z_spec[index] = complex_mul(vec2(0.0, -k_norm.y), h_spec);
+}
+

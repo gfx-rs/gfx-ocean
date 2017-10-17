@@ -1,0 +1,25 @@
+[package]
+name = "ocean"
+version = "0.1.0"
+
+[features]
+default = []
+dx12 = ["gfx-backend-dx12"]
+vulkan = ["gfx-backend-vulkan"]
+
+[[bin]]
+name = "ocean"
+path = "src/main.rs"
+
+[dependencies]
+env_logger = "0.4"
+log = "0.3"
+winit = "0.7"
+gfx-hal = { git = "https://github.com/msiglreith/gfx.git", branch="fix-cargo" }
+cgmath = "0.15"
+time = "0.1.38"
+panopaea = { git = "https://github.com/msiglreith/panopaea.git" , rev = "e958e5f" }
+gfx-backend-vulkan = { git = "https://github.com/msiglreith/gfx.git", branch="fix-cargo", optional = true, features = ["glsl-to-spirv"] }
+
+[target.'cfg(windows)'.dependencies]
+gfx-backend-dx12 = { git = "https://github.com/msiglreith/gfx.git", branch="fix-cargo", optional = true }
