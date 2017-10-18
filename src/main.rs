@@ -65,7 +65,7 @@ fn main() {
     env_logger::init().unwrap();
     let mut events_loop = winit::EventsLoop::new();
     let wb = winit::WindowBuilder::new()
-        .with_dimensions(1024, 768)
+        .with_dimensions(1200, 800)
         .with_title("ocean".to_string());
     let window = wb
         .build(&events_loop)
@@ -564,7 +564,7 @@ fn main() {
         gravity: 9.81,
 
         swell: 0.25,
-        domain_size: 1000.0,
+        domain_size: 800.0,
     };
 
     let spectrum = empirical::SpectrumTMA {

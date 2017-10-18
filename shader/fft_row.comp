@@ -1,8 +1,7 @@
 #version 450
 
-layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
-const uint num_threads = 256;
 const float pi = 3.1415926;
 
 vec2 complex_add(vec2 c0, vec2 c1) {
@@ -17,7 +16,7 @@ vec2 complex_mul(vec2 c0, vec2 c1) {
     return vec2(c0.x*c1.x - c0.y*c1.y, c0.y*c1.x + c0.x*c1.y);
 }
 
-layout(std430, binding = 0) coherent buffer fft {
+layout(std430, binding = 0) buffer fft {
     vec2 fft_data[];
 };
 
@@ -26,10 +25,9 @@ shared vec2 shared_row[2][512];
 void butterfly(uint block_size, uint src, uint dst) {
     const uint index = gl_GlobalInvocationID.x;
     const uint k = index & (block_size - 1u);
-    const uint offset = gl_GlobalInvocationID.y * num_threads * 2;
 
     const vec2 in0 = shared_row[src][index];
-    const vec2 in1 = shared_row[src][index + num_threads];
+    const vec2 in1 = shared_row[src][index + 256];
 
     const float theta = pi * float(k) / float(block_size); // NOTE: not 2 * pi as stated in the paper!
     const vec2 c = vec2(cos(theta), sin(theta));
@@ -46,6 +44,7 @@ void butterfly(uint block_size, uint src, uint dst) {
 void main() {
     const uint index = gl_GlobalInvocationID.x + 512 * gl_GlobalInvocationID.y;
     shared_row[0][gl_GlobalInvocationID.x] = fft_data[index];
+    shared_row[0][gl_GlobalInvocationID.x+256] = fft_data[index+256];
     memoryBarrierShared();
     barrier();
 
@@ -55,9 +54,11 @@ void main() {
         const uint dst = (i+1) % 2;
         butterfly(block_size, src, dst);
         memoryBarrierShared();
+        groupMemoryBarrier();
         barrier();
     }
 
     fft_data[index] = shared_row[1][gl_GlobalInvocationID.x];
+    fft_data[index+256] = shared_row[1][gl_GlobalInvocationID.x+256];
 }
 

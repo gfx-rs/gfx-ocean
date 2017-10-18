@@ -1,5 +1,6 @@
 
 #define RESOLUTION 512
+#define HALF_RESOLUTION 256
 #define RESOLUTION_LOG 9
 
 static float pi = 3.1415926f;
@@ -23,7 +24,6 @@ float2 complex_mul(float2 c0, float2 c1) {
 void butterfly(uint3 did, uint block_size, uint src, uint dst) {
     const uint index = did.x;
     const uint k = index & (block_size - 1u);
-    const uint offset = did.y * RESOLUTION;
 
     const float2 in0 = shared_row[src][index];
     const float2 in1 = shared_row[src][index + RESOLUTION/2];
@@ -38,10 +38,11 @@ void butterfly(uint3 did, uint block_size, uint src, uint dst) {
     shared_row[dst][dest + block_size] = complex_sub(in0, temp);
 }
 
-[numthreads(RESOLUTION, 1, 1)]
+[numthreads(HALF_RESOLUTION, 1, 1)]
 void fft_row(uint3 did: SV_DispatchThreadID) {
     const uint index = did.x + RESOLUTION * did.y;
     shared_row[0][did.x] = asfloat(fft_data.Load2(8*index));
+    shared_row[0][did.x+HALF_RESOLUTION] = asfloat(fft_data.Load2(8*index + 8*HALF_RESOLUTION));
     GroupMemoryBarrierWithGroupSync();
 
     [unroll]
@@ -54,12 +55,14 @@ void fft_row(uint3 did: SV_DispatchThreadID) {
     }
 
     fft_data.Store2(8*index, asuint(shared_row[1][did.x]));
+    fft_data.Store2(8*(index+HALF_RESOLUTION), asuint(shared_row[1][did.x+HALF_RESOLUTION]));
 }
 
-[numthreads(RESOLUTION, 1, 1)]
+[numthreads(HALF_RESOLUTION, 1, 1)]
 void fft_col(uint3 did: SV_DispatchThreadID) {
     const uint index = did.y + RESOLUTION * did.x;
     shared_row[0][did.x] = asfloat(fft_data.Load2(8*index));
+    shared_row[0][did.x+HALF_RESOLUTION] = asfloat(fft_data.Load2(8*index + 8*HALF_RESOLUTION*RESOLUTION));
     GroupMemoryBarrierWithGroupSync();
 
     [unroll]
@@ -72,4 +75,5 @@ void fft_col(uint3 did: SV_DispatchThreadID) {
     }
 
     fft_data.Store2(8*index, asuint(shared_row[1][did.x]));
+    fft_data.Store2(8*(index+HALF_RESOLUTION*RESOLUTION), asuint(shared_row[1][did.x+HALF_RESOLUTION]));
 }
