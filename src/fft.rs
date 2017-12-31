@@ -49,7 +49,7 @@ impl Fft{
                     binding: 0,
                     ty: pso::DescriptorType::StorageBuffer,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
             ],
         );
@@ -65,11 +65,25 @@ impl Fft{
         );
 
         let desc_sets = pool.allocate_sets(&[&set_layout, &set_layout, &set_layout]);
-        let layout = device.create_pipeline_layout(&[&set_layout]);
+        let layout = device.create_pipeline_layout(&[&set_layout], &[]);
         let (row_pass, col_pass) = {
             let mut pipelines = device.create_compute_pipelines(&[
-                (pso::EntryPoint { entry: "main", module: &cs_fft_row }, &layout),
-                (pso::EntryPoint { entry: "main", module: &cs_fft_col }, &layout),
+                pso::ComputePipelineDesc::new(
+                    pso::EntryPoint {
+                        entry: "main",
+                        module: &cs_fft_row,
+                        specialization: &[],
+                    },
+                    &layout,
+                ),
+                pso::ComputePipelineDesc::new(
+                    pso::EntryPoint {
+                        entry: "main",
+                        module: &cs_fft_col,
+                        specialization: &[],
+                    },
+                    &layout,
+                ),
             ]);
 
             let row_pass = pipelines.remove(0).unwrap();

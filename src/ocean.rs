@@ -40,37 +40,37 @@ impl Propagation {
                     binding: 0,
                     ty: pso::DescriptorType::UniformBuffer,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 1,
                     ty: pso::DescriptorType::StorageBuffer,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 2,
                     ty: pso::DescriptorType::StorageBuffer,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 3,
                     ty: pso::DescriptorType::StorageBuffer,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 4,
                     ty: pso::DescriptorType::StorageBuffer,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 5,
                     ty: pso::DescriptorType::StorageBuffer,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
             ],
         );
@@ -90,10 +90,17 @@ impl Propagation {
         );
 
         let desc_sets = pool.allocate_sets(&[&set_layout]);
-        let layout = device.create_pipeline_layout(&[&set_layout]);
+        let layout = device.create_pipeline_layout(&[&set_layout], &[]);
         let pipeline = {
             let mut pipelines = device.create_compute_pipelines(&[
-                (pso::EntryPoint { entry: "main", module: &cs_propagate }, &layout),
+                pso::ComputePipelineDesc::new(
+                    pso::EntryPoint {
+                        entry: "main",
+                        module: &cs_propagate,
+                        specialization: &[],
+                    },
+                    &layout,
+                ),
             ]);
 
             pipelines.remove(0).unwrap()
@@ -153,31 +160,31 @@ impl Correction {
                     binding: 0,
                     ty: pso::DescriptorType::UniformBuffer,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 1,
                     ty: pso::DescriptorType::StorageBuffer,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 2,
                     ty: pso::DescriptorType::StorageBuffer,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 3,
                     ty: pso::DescriptorType::StorageBuffer,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 4,
                     ty: pso::DescriptorType::StorageImage,
                     count: 1,
-                    stage_flags: pso::STAGE_COMPUTE,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
                 },
             ],
         );
@@ -201,10 +208,17 @@ impl Correction {
         );
 
         let desc_sets = pool.allocate_sets(&[&set_layout]);
-        let layout = device.create_pipeline_layout(&[&set_layout]);
+        let layout = device.create_pipeline_layout(&[&set_layout], &[]);
         let pipeline = {
             let mut pipelines = device.create_compute_pipelines(&[
-                (pso::EntryPoint { entry: "main", module: &cs_correct }, &layout),
+                pso::ComputePipelineDesc::new(
+                    pso::EntryPoint {
+                        entry: "main",
+                        module: &cs_correct,
+                        specialization: &[],
+                    },
+                    &layout,
+                ),
             ]);
 
             pipelines.remove(0).unwrap()

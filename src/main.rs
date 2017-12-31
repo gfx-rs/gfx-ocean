@@ -14,13 +14,12 @@ extern crate winit;
 extern crate time;
 extern crate panopaea;
 
-use hal::{buffer, command, device as d, image as i, memory as m, pass, pool, pso, state};
+use hal::{buffer as b, command, device as d, format as f, image as i, memory as m, pass, pool, pso};
 use hal::{
-    Adapter, Device, FrameSync, Gpu, Instance, QueueType, Submission, Surface,
+    Device, FrameSync, Gpu, Instance, QueueFamily, Submission, Surface, PhysicalDevice,
     DescriptorPool, IndexType, Primitive, Swapchain, SwapchainConfig, Backbuffer};
-use hal::command::{ClearColor, ClearValue};
-use hal::format::{self, Format, Formatted, Srgba8 as ColorFormat, Swizzle, Vec2, Vec3};
-use hal::target::Rect;
+use hal::command::{ClearColor, ClearValue, Rect, Viewport};
+use hal::format::{AsFormat, Format, Rgba8Srgb as ColorFormat, Swizzle};
 
 use panopaea::ocean::empirical;
 
@@ -55,7 +54,7 @@ const RESOLUTION: usize = 512;
 const HALF_RESOLUTION: usize = 128;
 
 const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
-    aspects: i::ASPECT_COLOR,
+    aspects: f::AspectFlags::COLOR,
     levels: 0 .. 1,
     layers: 0 .. 1,
 };
@@ -71,7 +70,7 @@ fn main() {
         .build(&events_loop)
         .unwrap();
 
-    let window_size = window.get_inner_size_pixels().unwrap();
+    let window_size = window.get_inner_size().unwrap();
     let pixel_width = window_size.0 as u16;
     let pixel_height = window_size.1 as u16;
 
@@ -85,27 +84,37 @@ fn main() {
         cgmath::perspective(cgmath::Deg(45.0), aspect_ratio, 1.0, 1024.0).into()
     };
 
-    let (_instance, adapters, mut surface) = {
+    let (_instance, mut adapters, mut surface) = {
         let instance = back::Instance::create("gfx-rs ocean", 1);
         let surface = instance.create_surface(&window);
         let adapters = instance.enumerate_adapters();
         (instance, adapters, surface)
     };
 
-    let adapter = &adapters[0];
-    let Gpu { mut device, mut general_queues, memory_types, .. } =
-        adapter.open_with(|ref family, qtype| {
-            if qtype.supports_compute() && qtype.supports_graphics() && surface.supports_queue(family) {
-                (1, QueueType::General)
+    let adapter = adapters.remove(0);
+    let memory_types = adapter
+        .physical_device
+        .memory_properties()
+        .memory_types;
+    let Gpu { mut device, mut queue_groups } =
+        adapter.open_with(|family| {
+            if family.supports_compute() &&
+               family.supports_graphics() &&
+               surface.supports_queue_family(family) {
+                Some(1)
             } else {
-                (0, QueueType::Transfer)
+                None
             }
         });
-    let mut queue = general_queues.remove(0);
+
+    let mut queue_group = hal::QueueGroup::<_, hal::General>::new(queue_groups.remove(0));
+    let mut general_pool = device.create_command_pool_typed(&queue_group, pool::CommandPoolCreateFlags::empty(), 4);
+    let mut queue = &mut queue_group.queues[0];
 
     let swap_config = SwapchainConfig::new()
-        .with_color::<ColorFormat>();
-    let (mut swap_chain, backbuffer) = surface.build_swapchain(swap_config, &queue);
+        .with_color(ColorFormat::SELF);
+
+    let (mut swap_chain, backbuffer) = device.create_swapchain(&mut surface, swap_config);
 
     let frame_images = match backbuffer {
         Backbuffer::Images(images) => {
@@ -162,27 +171,27 @@ fn main() {
                 binding: 0,
                 ty: pso::DescriptorType::UniformBuffer,
                 count: 1,
-                stage_flags: pso::STAGE_VERTEX,
+                stage_flags: pso::ShaderStageFlags::VERTEX,
             },
             pso::DescriptorSetLayoutBinding {
                 binding: 1,
                 ty: pso::DescriptorType::SampledImage,
                 count: 1,
-                stage_flags: pso::STAGE_VERTEX,
+                stage_flags: pso::ShaderStageFlags::VERTEX,
             },
             pso::DescriptorSetLayoutBinding {
                 binding: 2,
                 ty: pso::DescriptorType::Sampler,
                 count: 1,
-                stage_flags: pso::STAGE_VERTEX,
+                stage_flags: pso::ShaderStageFlags::VERTEX,
             },
         ],
     );
 
-    let ocean_layout = device.create_pipeline_layout(&[&set_layout]);
+    let ocean_layout = device.create_pipeline_layout(&[&set_layout], &[]);
     let ocean_pass = {
         let attachment = pass::Attachment {
-            format: ColorFormat::SELF,
+            format: Some(ColorFormat::SELF),
             ops: pass::AttachmentOps::new(pass::AttachmentLoadOp::Clear, pass::AttachmentStoreOp::Store),
             stencil_ops: pass::AttachmentOps::DONT_CARE,
             layouts: i::ImageLayout::Undefined .. i::ImageLayout::Present,
@@ -195,7 +204,7 @@ fn main() {
             preserves: &[],
         };
 
-        device.create_renderpass(&[attachment], &[subpass], &[])
+        device.create_render_pass(&[attachment], &[subpass], &[])
     };
 
     let extent = d::Extent { width: pixel_width as _, height: pixel_height as _, depth: 1 };
@@ -206,66 +215,10 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
-    let mut ocean_pipe_desc = pso::GraphicsPipelineDesc::new(
-        Primitive::TriangleList,
-        pso::Rasterizer {
-            polgyon_mode: state::RasterMethod::Line(1),
-            cull_mode: state::CullFace::Nothing,
-            front_face: state::FrontFace::CounterClockwise,
-            depth_clamping: false,
-            depth_bias: None,
-            conservative: false,
-        }
-    );
-    ocean_pipe_desc.blender.targets.push(pso::ColorInfo {
-        mask: state::MASK_ALL,
-        color: None,
-        alpha: None,
-    });
-    ocean_pipe_desc.vertex_buffers.push(pso::VertexBufferDesc {
-        stride: std::mem::size_of::<Vertex>() as u32,
-        rate: 0,
-    });
-    ocean_pipe_desc.vertex_buffers.push(pso::VertexBufferDesc {
-        stride: std::mem::size_of::<PatchOffset>() as u32,
-        rate: 1,
-    });
-    ocean_pipe_desc.attributes.push(pso::AttributeDesc {
-        location: 0,
-        binding: 0,
-        element: pso::Element {
-            format: <Vec3<f32> as Formatted>::SELF,
-            offset: 0,
-        },
-    });
-    ocean_pipe_desc.attributes.push(pso::AttributeDesc {
-        location: 1,
-        binding: 0,
-        element: pso::Element {
-            format: <Vec2<f32> as Formatted>::SELF,
-            offset: 12,
-        },
-    });
-    ocean_pipe_desc.attributes.push(pso::AttributeDesc {
-        location: 2,
-        binding: 1,
-        element: pso::Element {
-            format: <Vec2<f32> as Formatted>::SELF,
-            offset: 0,
-        },
-    });
-
-    let sampler = device.create_sampler(
-        i::SamplerInfo::new(
-            i::FilterMethod::Bilinear,
-            i::WrapMode::Tile,
-        )
-    );
-
     let pipelines = {
         let (vs_entry, fs_entry) = (
-            pso::EntryPoint { entry: "main", module: &vs_ocean },
-            pso::EntryPoint { entry: "main", module: &fs_ocean },
+            pso::EntryPoint { entry: "main", module: &vs_ocean, specialization: &[] },
+            pso::EntryPoint { entry: "main", module: &fs_ocean, specialization: &[] },
         );
 
         let shader_entries = pso::GraphicsShaderSet {
@@ -275,11 +228,69 @@ fn main() {
             geometry: None,
             fragment: Some(fs_entry),
         };
+
         let subpass = pass::Subpass { index: 0, main_pass: &ocean_pass };
-        device.create_graphics_pipelines(&[
-            (shader_entries, &ocean_layout, subpass, &ocean_pipe_desc)
-        ])
+
+        let mut ocean_pipe_desc = pso::GraphicsPipelineDesc::new(
+            shader_entries,
+            Primitive::TriangleList,
+            pso::Rasterizer {
+                polygon_mode: pso::PolygonMode::Line(1.0),
+                cull_face: None,
+                front_face: pso::FrontFace::CounterClockwise,
+                depth_clamping: false,
+                depth_bias: None,
+                conservative: false,
+            },
+            &ocean_layout,
+            subpass,
+        );
+        ocean_pipe_desc.blender.targets.push(pso::ColorBlendDesc(
+            pso::ColorMask::ALL,
+            pso::BlendState::Off,
+        ));
+        ocean_pipe_desc.vertex_buffers.push(pso::VertexBufferDesc {
+            stride: std::mem::size_of::<Vertex>() as u32,
+            rate: 0,
+        });
+        ocean_pipe_desc.vertex_buffers.push(pso::VertexBufferDesc {
+            stride: std::mem::size_of::<PatchOffset>() as u32,
+            rate: 1,
+        });
+        ocean_pipe_desc.attributes.push(pso::AttributeDesc {
+            location: 0,
+            binding: 0,
+            element: pso::Element {
+                format: Format::Rgb32Float,
+                offset: 0,
+            },
+        });
+        ocean_pipe_desc.attributes.push(pso::AttributeDesc {
+            location: 1,
+            binding: 0,
+            element: pso::Element {
+                format: Format::Rg32Float,
+                offset: 12,
+            },
+        });
+        ocean_pipe_desc.attributes.push(pso::AttributeDesc {
+            location: 2,
+            binding: 1,
+            element: pso::Element {
+                format: Format::Rg32Float,
+                offset: 0,
+            },
+        });
+
+        device.create_graphics_pipelines(&[ocean_pipe_desc])
     };
+
+    let sampler = device.create_sampler(
+        i::SamplerInfo::new(
+            i::FilterMethod::Bilinear,
+            i::WrapMode::Tile,
+        )
+    );
 
     let mut desc_pool = device.create_descriptor_pool(
         1, // sets
@@ -304,15 +315,18 @@ fn main() {
     let (locals_buffer, locals_memory) = {
         let buffer_stride = std::mem::size_of::<Locals>() as u64;
         let buffer_len = buffer_stride;
-        let buffer_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::UNIFORM).unwrap();
+        let buffer_unbound = device.create_buffer(buffer_len, b::Usage::UNIFORM).unwrap();
         let buffer_req = device.get_buffer_requirements(&buffer_unbound);
 
-        let mem_type =
-            memory_types.iter().find(|mem_type| {
-                buffer_req.type_mask & (1 << mem_type.id) != 0 &&
-                mem_type.properties.contains(m::CPU_VISIBLE)
+        let mem_type = memory_types
+            .iter()
+            .enumerate()
+            .position(|(id, mem_type)| {
+                buffer_req.type_mask & (1 << id) != 0 &&
+                mem_type.properties.contains(m::Properties::CPU_VISIBLE)
             })
-            .unwrap();
+            .unwrap()
+            .into();
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         let locals_buffer = device.bind_buffer_memory(&buffer_memory, 0, buffer_unbound).unwrap();
@@ -335,15 +349,18 @@ fn main() {
     let (grid_vertex_buffer, grid_vertex_memory) = {
         let buffer_stride = std::mem::size_of::<Vertex>() as u64;
         let buffer_len = (HALF_RESOLUTION * HALF_RESOLUTION) as u64 * buffer_stride;
-        let buffer_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::VERTEX).unwrap();
+        let buffer_unbound = device.create_buffer(buffer_len, b::Usage::VERTEX).unwrap();
         let buffer_req = device.get_buffer_requirements(&buffer_unbound);
 
-        let mem_type =
-            memory_types.iter().find(|mem_type| {
-                buffer_req.type_mask & (1 << mem_type.id) != 0 &&
-                mem_type.properties.contains(m::CPU_VISIBLE)
+        let mem_type = memory_types
+            .iter()
+            .enumerate()
+            .position(|(id, mem_type)| {
+                buffer_req.type_mask & (1 << id) != 0 &&
+                mem_type.properties.contains(m::Properties::CPU_VISIBLE)
             })
-            .unwrap();
+            .unwrap()
+            .into();
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         let vertex_buffer = device.bind_buffer_memory(&buffer_memory, 0, buffer_unbound).unwrap();
@@ -369,15 +386,18 @@ fn main() {
     let (grid_patch_buffer, grid_patch_memory) = {
         let buffer_stride = std::mem::size_of::<PatchOffset>() as u64;
         let buffer_len = 4 * buffer_stride;
-        let buffer_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::VERTEX).unwrap();
+        let buffer_unbound = device.create_buffer(buffer_len, b::Usage::VERTEX).unwrap();
         let buffer_req = device.get_buffer_requirements(&buffer_unbound);
 
-        let mem_type =
-            memory_types.iter().find(|mem_type| {
-                buffer_req.type_mask & (1 << mem_type.id) != 0 &&
-                mem_type.properties.contains(m::CPU_VISIBLE)
+        let mem_type = memory_types
+            .iter()
+            .enumerate()
+            .position(|(id, mem_type)| {
+                buffer_req.type_mask & (1 << id) != 0 &&
+                mem_type.properties.contains(m::Properties::CPU_VISIBLE)
             })
-            .unwrap();
+            .unwrap()
+            .into();
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         let buffer = device.bind_buffer_memory(&buffer_memory, 0, buffer_unbound).unwrap();
@@ -407,15 +427,18 @@ fn main() {
     let (grid_index_buffer, grid_index_memory) = {
         let buffer_stride = std::mem::size_of::<u32>() as u64;
         let buffer_len = (6 * (HALF_RESOLUTION-1) * (HALF_RESOLUTION-1)) as u64 * buffer_stride;
-        let buffer_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::INDEX).unwrap();
+        let buffer_unbound = device.create_buffer(buffer_len, b::Usage::INDEX).unwrap();
         let buffer_req = device.get_buffer_requirements(&buffer_unbound);
 
-        let mem_type =
-            memory_types.iter().find(|mem_type| {
-                buffer_req.type_mask & (1 << mem_type.id) != 0 &&
-                mem_type.properties.contains(m::CPU_VISIBLE)
+        let mem_type = memory_types
+            .iter()
+            .enumerate()
+            .position(|(id, mem_type)| {
+                buffer_req.type_mask & (1 << id) != 0 &&
+                mem_type.properties.contains(m::Properties::CPU_VISIBLE)
             })
-            .unwrap();
+            .unwrap()
+            .into();
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         let index_buffer = device.bind_buffer_memory(&buffer_memory, 0, buffer_unbound).unwrap();
@@ -446,19 +469,23 @@ fn main() {
         let buffer_stride = 2 * std::mem::size_of::<f32>() as u64;
         let buffer_len = (RESOLUTION * RESOLUTION) as u64 * buffer_stride;
 
-        let initial_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::STORAGE|buffer::TRANSFER_DST).unwrap();
-        let dy_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::STORAGE).unwrap();
-        let dx_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::STORAGE).unwrap();
-        let dz_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::STORAGE).unwrap();
+        let initial_unbound = device.create_buffer(buffer_len, b::Usage::STORAGE|b::Usage::TRANSFER_DST).unwrap();
+        let dy_unbound = device.create_buffer(buffer_len, b::Usage::STORAGE).unwrap();
+        let dx_unbound = device.create_buffer(buffer_len, b::Usage::STORAGE).unwrap();
+        let dz_unbound = device.create_buffer(buffer_len, b::Usage::STORAGE).unwrap();
 
         let buffer_req = device.get_buffer_requirements(&initial_unbound);
 
         let mem_type =
-            memory_types.iter().find(|mem_type| {
-                buffer_req.type_mask & (1 << mem_type.id) != 0 &&
-                mem_type.properties.contains(m::DEVICE_LOCAL)
+            memory_types
+            .iter()
+            .enumerate()
+            .position(|(id, mem_type)| {
+                buffer_req.type_mask & (1 << id) != 0 &&
+                mem_type.properties.contains(m::Properties::DEVICE_LOCAL)
             })
-            .unwrap();
+            .unwrap()
+            .into();
 
         let buffer_memory = device.allocate_memory(mem_type, 16 * buffer_req.size).unwrap();
         let initial_spec = device.bind_buffer_memory(&buffer_memory, 0, initial_unbound).unwrap();
@@ -476,15 +503,18 @@ fn main() {
     let (omega_buffer, omega_memory) = {
         let buffer_stride = std::mem::size_of::<f32>() as u64;
         let buffer_len = (RESOLUTION * RESOLUTION) as u64 * buffer_stride;
-        let buffer_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::STORAGE|buffer::TRANSFER_DST).unwrap();
+        let buffer_unbound = device.create_buffer(buffer_len, b::Usage::STORAGE|b::Usage::TRANSFER_DST).unwrap();
         let buffer_req = device.get_buffer_requirements(&buffer_unbound);
 
-        let mem_type =
-            memory_types.iter().find(|mem_type| {
-                buffer_req.type_mask & (1 << mem_type.id) != 0 &&
-                mem_type.properties.contains(m::DEVICE_LOCAL)
+        let mem_type = memory_types
+            .iter()
+            .enumerate()
+            .position(|(id, mem_type)| {
+                buffer_req.type_mask & (1 << id) != 0 &&
+                mem_type.properties.contains(m::Properties::DEVICE_LOCAL)
             })
-            .unwrap();
+            .unwrap()
+            .into();
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         let omega_buffer = device.bind_buffer_memory(&buffer_memory, 0, buffer_unbound).unwrap();
@@ -495,15 +525,18 @@ fn main() {
     let (propagate_locals_buffer, propagate_locals_memory) = {
         let buffer_stride = std::mem::size_of::<PropagateLocals>() as u64;
         let buffer_len = buffer_stride;
-        let buffer_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::UNIFORM).unwrap();
+        let buffer_unbound = device.create_buffer(buffer_len, b::Usage::UNIFORM).unwrap();
         let buffer_req = device.get_buffer_requirements(&buffer_unbound);
 
-        let mem_type =
-            memory_types.iter().find(|mem_type| {
-                buffer_req.type_mask & (1 << mem_type.id) != 0 &&
-                mem_type.properties.contains(m::CPU_VISIBLE)
+        let mem_type = memory_types
+            .iter()
+            .enumerate()
+            .position(|(id, mem_type)| {
+                buffer_req.type_mask & (1 << id) != 0 &&
+                mem_type.properties.contains(m::Properties::CPU_VISIBLE)
             })
-            .unwrap();
+            .unwrap()
+            .into();
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         let locals_buffer = device.bind_buffer_memory(&buffer_memory, 0, buffer_unbound).unwrap();
@@ -513,15 +546,18 @@ fn main() {
     let (correct_locals_buffer, correct_locals_memory) = {
         let buffer_stride = std::mem::size_of::<CorrectionLocals>() as u64;
         let buffer_len = buffer_stride;
-        let buffer_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::UNIFORM).unwrap();
+        let buffer_unbound = device.create_buffer(buffer_len, b::Usage::UNIFORM).unwrap();
         let buffer_req = device.get_buffer_requirements(&buffer_unbound);
 
-        let mem_type =
-            memory_types.iter().find(|mem_type| {
-                buffer_req.type_mask & (1 << mem_type.id) != 0 &&
-                mem_type.properties.contains(m::CPU_VISIBLE)
+        let mem_type = memory_types
+            .iter()
+            .enumerate()
+            .position(|(id, mem_type)| {
+                buffer_req.type_mask & (1 << id) != 0 &&
+                mem_type.properties.contains(m::Properties::CPU_VISIBLE)
             })
-            .unwrap();
+            .unwrap()
+            .into();
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         let locals_buffer = device.bind_buffer_memory(&buffer_memory, 0, buffer_unbound).unwrap();
@@ -539,10 +575,12 @@ fn main() {
         (locals_buffer, buffer_memory)
     };
 
-    let viewport = hal::Viewport {
-        x: 0, y: 0,
-        w: pixel_width, h: pixel_height,
-        near: 0.0, far: 1.0,
+    let viewport = Viewport {
+        rect: Rect {
+            x: 0, y: 0,
+            w: pixel_width, h: pixel_height,
+        },
+        depth: (0.0 .. 1.0),
     };
     let scissor = Rect {
         x: 0, y: 0,
@@ -551,7 +589,6 @@ fn main() {
 
     let spectrum_len = RESOLUTION*RESOLUTION*2*std::mem::size_of::<f32>();
     let omega_len = RESOLUTION*RESOLUTION*std::mem::size_of::<f32>();
-    let mut general_pool = queue.create_general_pool(4, pool::CommandPoolCreateFlags::empty());
 
     // Initialize ocean..
     let parameters = empirical::Parameters {
@@ -582,15 +619,18 @@ fn main() {
     let (omega_staging_buffer, omega_staging_memory) = {
         let buffer_stride = std::mem::size_of::<f32>() as u64;
         let buffer_len = (RESOLUTION * RESOLUTION) as u64 * buffer_stride;
-        let buffer_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::TRANSFER_SRC).unwrap();
+        let buffer_unbound = device.create_buffer(buffer_len, b::Usage::TRANSFER_SRC).unwrap();
         let buffer_req = device.get_buffer_requirements(&buffer_unbound);
 
-        let mem_type =
-            memory_types.iter().find(|mem_type| {
-                buffer_req.type_mask & (1 << mem_type.id) != 0 &&
-                mem_type.properties.contains(m::CPU_VISIBLE)
+        let mem_type = memory_types
+            .iter()
+            .enumerate()
+            .position(|(id, mem_type)| {
+                buffer_req.type_mask & (1 << id) != 0 &&
+                mem_type.properties.contains(m::Properties::CPU_VISIBLE)
             })
-            .unwrap();
+            .unwrap()
+            .into();
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         let staging_buffer = device.bind_buffer_memory(&buffer_memory, 0, buffer_unbound).unwrap();
@@ -609,15 +649,18 @@ fn main() {
     let (spec_staging_buffer, spec_staging_memory) = {
         let buffer_stride = 2*std::mem::size_of::<f32>() as u64;
         let buffer_len = (RESOLUTION * RESOLUTION) as u64 * buffer_stride;
-        let buffer_unbound = device.create_buffer(buffer_len, buffer_stride, buffer::TRANSFER_SRC).unwrap();
+        let buffer_unbound = device.create_buffer(buffer_len, b::Usage::TRANSFER_SRC).unwrap();
         let buffer_req = device.get_buffer_requirements(&buffer_unbound);
 
-        let mem_type =
-            memory_types.iter().find(|mem_type| {
-                buffer_req.type_mask & (1 << mem_type.id) != 0 &&
-                mem_type.properties.contains(m::CPU_VISIBLE)
+        let mem_type = memory_types
+            .iter()
+            .enumerate()
+            .position(|(id, mem_type)| {
+                buffer_req.type_mask & (1 << id) != 0 &&
+                mem_type.properties.contains(m::Properties::CPU_VISIBLE)
             })
-            .unwrap();
+            .unwrap()
+            .into();
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         let staging_buffer = device.bind_buffer_memory(&buffer_memory, 0, buffer_unbound).unwrap();
@@ -641,17 +684,20 @@ fn main() {
     };
 
     let kind = i::Kind::D2(RESOLUTION as i::Size, RESOLUTION as i::Size, i::AaMode::Single);
-    let img_format = Format(format::SurfaceType::R32_G32_B32_A32, format::ChannelType::Float);
-    let image_unbound = device.create_image(kind, 1, img_format, i::SAMPLED|i::STORAGE).unwrap(); // TODO: usage
+    let img_format = Format::Rgba32Float;
+    let image_unbound = device.create_image(kind, 1, img_format, i::Usage::SAMPLED|i::Usage::STORAGE).unwrap(); // TODO: usage
     let image_req = device.get_image_requirements(&image_unbound);
 
     let device_type = memory_types
         .iter()
-        .find(|memory_type| {
-            image_req.type_mask & (1 << memory_type.id) != 0 &&
-            memory_type.properties.contains(m::DEVICE_LOCAL)
+        .enumerate()
+        .position(|(id, mem_type)| {
+            image_req.type_mask & (1 << id) != 0 &&
+            mem_type.properties.contains(m::Properties::DEVICE_LOCAL)
         })
-        .unwrap();
+        .unwrap()
+        .into();
+
     let image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
     let displacement_map = device.bind_image_memory(&image_memory, 0, image_unbound).unwrap();
     let displacement_uav = device.create_image_view(&displacement_map, img_format, Swizzle::NO, COLOR_RANGE).unwrap();
@@ -664,11 +710,11 @@ fn main() {
 
             let image_barrier = m::Barrier::Image {
                 states: (i::Access::empty(), i::ImageLayout::Undefined) ..
-                        (i::SHADER_READ|i::SHADER_WRITE, i::ImageLayout::General),
+                        (i::Access::SHADER_READ|i::Access::SHADER_WRITE, i::ImageLayout::General),
                 target: &displacement_map,
                 range: COLOR_RANGE,
             };
-            cmd_buffer.pipeline_barrier(pso::TOP_OF_PIPE .. pso::COMPUTE_SHADER, &[image_barrier]);
+            cmd_buffer.pipeline_barrier(pso::PipelineStage::TOP_OF_PIPE .. pso::PipelineStage::COMPUTE_SHADER, &[image_barrier]);
 
             // TODO: pipeline barriers
             cmd_buffer.copy_buffer(
@@ -899,97 +945,97 @@ fn main() {
             let mut cmd_buffer = general_pool.acquire_command_buffer();
 
             cmd_buffer.bind_compute_pipeline(&propagate.pipeline);
-            cmd_buffer.bind_compute_descriptor_sets(&propagate.layout, 0, &[&propagate.desc_sets[0]]);
+            cmd_buffer.bind_compute_descriptor_sets(&propagate.layout, 0, &propagate.desc_sets[0..1]);
             cmd_buffer.dispatch(RESOLUTION as u32, RESOLUTION as u32, 1);
 
             let dx_barrier = m::Barrier::Buffer {
-                states: buffer::SHADER_WRITE..buffer::SHADER_WRITE|buffer::SHADER_READ,
+                states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE|b::Access::SHADER_READ,
                 target: &dx_spec,
             };
             let dy_barrier = m::Barrier::Buffer {
-                states: buffer::SHADER_WRITE..buffer::SHADER_WRITE|buffer::SHADER_READ,
+                states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE|b::Access::SHADER_READ,
                 target: &dy_spec,
             };
             let dz_barrier = m::Barrier::Buffer {
-                states: buffer::SHADER_WRITE..buffer::SHADER_WRITE|buffer::SHADER_READ,
+                states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE|b::Access::SHADER_READ,
                 target: &dz_spec,
             };
             cmd_buffer.pipeline_barrier(
-                pso::COMPUTE_SHADER .. pso::COMPUTE_SHADER,
+                pso::PipelineStage::COMPUTE_SHADER .. pso::PipelineStage::COMPUTE_SHADER,
                 &[dx_barrier, dy_barrier, dz_barrier],
             );
 
             cmd_buffer.bind_compute_pipeline(&fft.row_pass);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &[&fft.desc_sets[0]]);
+            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[0..1]);
             cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &[&fft.desc_sets[1]]);
+            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[1..2]);
             cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &[&fft.desc_sets[2]]);
+            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[2..3]);
             cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
 
             let dx_barrier = m::Barrier::Buffer {
-                states: buffer::SHADER_WRITE|buffer::SHADER_READ..buffer::SHADER_WRITE|buffer::SHADER_READ,
+                states: b::Access::SHADER_WRITE|b::Access::SHADER_READ..b::Access::SHADER_WRITE|b::Access::SHADER_READ,
                 target: &dx_spec,
             };
             let dy_barrier = m::Barrier::Buffer {
-                states: buffer::SHADER_WRITE|buffer::SHADER_READ..buffer::SHADER_WRITE|buffer::SHADER_READ,
+                states: b::Access::SHADER_WRITE|b::Access::SHADER_READ..b::Access::SHADER_WRITE|b::Access::SHADER_READ,
                 target: &dy_spec,
             };
             let dz_barrier = m::Barrier::Buffer {
-                states: buffer::SHADER_WRITE|buffer::SHADER_READ..buffer::SHADER_WRITE|buffer::SHADER_READ,
+                states: b::Access::SHADER_WRITE|b::Access::SHADER_READ..b::Access::SHADER_WRITE|b::Access::SHADER_READ,
                 target: &dz_spec,
             };
             cmd_buffer.pipeline_barrier(
-                pso::COMPUTE_SHADER .. pso::COMPUTE_SHADER,
+                pso::PipelineStage::COMPUTE_SHADER .. pso::PipelineStage::COMPUTE_SHADER,
                 &[dx_barrier, dy_barrier, dz_barrier],
             );
 
             cmd_buffer.bind_compute_pipeline(&fft.col_pass);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &[&fft.desc_sets[0]]);
+            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[0..1]);
             cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &[&fft.desc_sets[1]]);
+            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[1..2]);
             cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &[&fft.desc_sets[2]]);
+            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[2..3]);
             cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
 
             let dx_barrier = m::Barrier::Buffer {
-                states: buffer::SHADER_WRITE|buffer::SHADER_READ..buffer::SHADER_WRITE|buffer::SHADER_READ,
+                states: b::Access::SHADER_WRITE|b::Access::SHADER_READ..b::Access::SHADER_WRITE|b::Access::SHADER_READ,
                 target: &dx_spec,
             };
             let dy_barrier = m::Barrier::Buffer {
-                states: buffer::SHADER_WRITE|buffer::SHADER_READ..buffer::SHADER_WRITE|buffer::SHADER_READ,
+                states: b::Access::SHADER_WRITE|b::Access::SHADER_READ..b::Access::SHADER_WRITE|b::Access::SHADER_READ,
                 target: &dy_spec,
             };
             let dz_barrier = m::Barrier::Buffer {
-                states: buffer::SHADER_WRITE|buffer::SHADER_READ..buffer::SHADER_WRITE|buffer::SHADER_READ,
+                states: b::Access::SHADER_WRITE|b::Access::SHADER_READ..b::Access::SHADER_WRITE|b::Access::SHADER_READ,
                 target: &dz_spec,
             };
             let image_barrier = m::Barrier::Image {
-                states: (i::SHADER_READ|i::SHADER_WRITE, i::ImageLayout::General) ..
-                        (i::SHADER_READ|i::SHADER_WRITE, i::ImageLayout::General),
+                states: (i::Access::SHADER_READ|i::Access::SHADER_WRITE, i::ImageLayout::General) ..
+                        (i::Access::SHADER_READ|i::Access::SHADER_WRITE, i::ImageLayout::General),
                 target: &displacement_map,
                 range: COLOR_RANGE,
             };
-            cmd_buffer.pipeline_barrier(pso::VERTEX_SHADER|pso::COMPUTE_SHADER .. pso::COMPUTE_SHADER, &[dx_barrier, dy_barrier, dz_barrier, image_barrier]);
+            cmd_buffer.pipeline_barrier(pso::PipelineStage::VERTEX_SHADER|pso::PipelineStage::COMPUTE_SHADER .. pso::PipelineStage::COMPUTE_SHADER, &[dx_barrier, dy_barrier, dz_barrier, image_barrier]);
 
             cmd_buffer.bind_compute_pipeline(&correction.pipeline);
-            cmd_buffer.bind_compute_descriptor_sets(&correction.layout, 0, &[&correction.desc_sets[0]]);
+            cmd_buffer.bind_compute_descriptor_sets(&correction.layout, 0, &correction.desc_sets[0..1]);
             cmd_buffer.dispatch(RESOLUTION as u32, RESOLUTION as u32, 1);
 
             let image_barrier = m::Barrier::Image {
-                states: (i::SHADER_READ|i::SHADER_WRITE, i::ImageLayout::General) ..
-                        (i::SHADER_READ|i::SHADER_WRITE, i::ImageLayout::General),
+                states: (i::Access::SHADER_READ|i::Access::SHADER_WRITE, i::ImageLayout::General) ..
+                        (i::Access::SHADER_READ|i::Access::SHADER_WRITE, i::ImageLayout::General),
                 target: &displacement_map,
                 range: COLOR_RANGE,
             };
-            cmd_buffer.pipeline_barrier(pso::COMPUTE_SHADER .. pso::VERTEX_SHADER, &[image_barrier]);
+            cmd_buffer.pipeline_barrier(pso::PipelineStage::COMPUTE_SHADER .. pso::PipelineStage::VERTEX_SHADER, &[image_barrier]);
 
-            cmd_buffer.set_viewports(&[viewport]);
+            cmd_buffer.set_viewports(&[viewport.clone()]);
             cmd_buffer.set_scissors(&[scissor]);
             cmd_buffer.bind_graphics_pipeline(&pipelines[0].as_ref().unwrap());
-            cmd_buffer.bind_graphics_descriptor_sets(&ocean_layout, 0, &[&desc_sets[0]]);
+            cmd_buffer.bind_graphics_descriptor_sets(&ocean_layout, 0, &desc_sets[0..1]);
             cmd_buffer.bind_vertex_buffers(pso::VertexBufferSet(vec![(&grid_vertex_buffer, 0), (&grid_patch_buffer, 0)]));
-            cmd_buffer.bind_index_buffer(buffer::IndexBufferView {
+            cmd_buffer.bind_index_buffer(b::IndexBufferView {
                 buffer: &grid_index_buffer,
                 offset: 0,
                 index_type: IndexType::U32,
@@ -1010,7 +1056,7 @@ fn main() {
         };
 
         let submission = Submission::new()
-            .wait_on(&[(&mut frame_semaphore, pso::BOTTOM_OF_PIPE)])
+            .wait_on(&[(&mut frame_semaphore, pso::PipelineStage::BOTTOM_OF_PIPE)])
             .submit(&[submit]);
         queue.submit(submission, Some(&mut frame_fence));
 
