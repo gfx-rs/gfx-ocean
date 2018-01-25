@@ -776,7 +776,7 @@ fn main() {
     // Upload data
     {
         let submit = {
-            let mut cmd_buffer = general_pool.acquire_command_buffer();
+            let mut cmd_buffer = general_pool.acquire_command_buffer(false);
 
             let image_barrier = m::Barrier::Image {
                 states: (i::Access::empty(), i::ImageLayout::Undefined)
@@ -819,7 +819,7 @@ fn main() {
             cmd_buffer.finish()
         };
 
-        let submission = Submission::new().submit(&[submit]);
+        let submission = Submission::new().submit(Some(submit));
         queue.submit(submission, Some(&mut frame_fence));
 
         device.wait_for_fences(&[&frame_fence], d::WaitFor::All, !0);
@@ -1018,7 +1018,7 @@ fn main() {
         device.release_mapping_writer(locals);
 
         let submit = {
-            let mut cmd_buffer = general_pool.acquire_command_buffer();
+            let mut cmd_buffer = general_pool.acquire_command_buffer(false);
 
             cmd_buffer.bind_compute_pipeline(&propagate.pipeline);
             cmd_buffer.bind_compute_descriptor_sets(
@@ -1174,7 +1174,7 @@ fn main() {
 
         let submission = Submission::new()
             .wait_on(&[(&mut frame_semaphore, pso::PipelineStage::BOTTOM_OF_PIPE)])
-            .submit(&[submit]);
+            .submit(Some(submit));
         queue.submit(submission, Some(&mut frame_fence));
 
         device.wait_for_fences(&[&frame_fence], d::WaitFor::All, !0);

@@ -16,15 +16,15 @@ path = "src/main.rs"
 env_logger = "0.4"
 log = "0.3"
 winit = "0.10"
-gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", rev= "5214237" }
+gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", rev= "3d8ad5c" }
 cgmath = "0.15"
 time = "0.1.38"
 glsl-to-spirv = "0.1"
 panopaea = { git = "https://github.com/msiglreith/panopaea.git", rev = "e958e5f" }
-gfx-backend-vulkan = { git = "https://github.com/gfx-rs/gfx.git", rev= "5214237", optional = true, features = ["glsl-to-spirv"] }
+gfx-backend-vulkan = { git = "https://github.com/gfx-rs/gfx.git", rev= "3d8ad5c", optional = true, features = ["glsl-to-spirv"] }
 
 [target.'cfg(windows)'.dependencies]
-gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", rev= "5214237" , optional = true}
+gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", rev= "3d8ad5c" , optional = true}
 
 [target.'cfg(target_os = "macos")'.dependencies]
-gfx-backend-metal = { git = "https://github.com/gfx-rs/gfx.git", rev= "5214237" , optional = true}
+gfx-backend-metal = { git = "https://github.com/gfx-rs/gfx.git", rev= "3d8ad5c" , optional = true}
