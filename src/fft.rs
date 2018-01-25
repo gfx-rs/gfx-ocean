@@ -1,6 +1,5 @@
-
-use back::{Backend as B};
-use hal::{pso, Device, DescriptorPool, Backend};
+use back::Backend as B;
+use hal::{pso, Backend, DescriptorPool, Device};
 
 pub struct Fft {
     pub cs_fft_row: <B as Backend>::ShaderModule,
@@ -13,32 +12,29 @@ pub struct Fft {
     pub pool: <B as Backend>::DescriptorPool,
 }
 
-impl Fft{
+impl Fft {
     pub fn init(device: &mut <B as Backend>::Device) -> Self {
         let cs_fft_row = device
-            .create_shader_module(
-                &::translate_shader(
-                    include_str!("../shader/fft_row.comp"),
-                    pso::Stage::Compute,
-                ).unwrap(),
-            ).unwrap();
+            .create_shader_module(&::translate_shader(
+                include_str!("../shader/fft_row.comp"),
+                pso::Stage::Compute,
+            ).unwrap())
+            .unwrap();
         let cs_fft_col = device
-            .create_shader_module(
-                &::translate_shader(
-                    include_str!("../shader/fft_col.comp"),
-                    pso::Stage::Compute,
-                ).unwrap(),
-            ).unwrap();
+            .create_shader_module(&::translate_shader(
+                include_str!("../shader/fft_col.comp"),
+                pso::Stage::Compute,
+            ).unwrap())
+            .unwrap();
 
         let set_layout = device.create_descriptor_set_layout(&[
-                pso::DescriptorSetLayoutBinding {
-                    binding: 0,
-                    ty: pso::DescriptorType::StorageBuffer,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-            ],
-        );
+            pso::DescriptorSetLayoutBinding {
+                binding: 0,
+                ty: pso::DescriptorType::StorageBuffer,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+        ]);
 
         let mut pool = device.create_descriptor_pool(
             3,

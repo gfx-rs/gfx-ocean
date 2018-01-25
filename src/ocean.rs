@@ -1,6 +1,5 @@
-
-use back::{Backend as B};
-use hal::{pso, Device, DescriptorPool, Backend};
+use back::Backend as B;
+use hal::{pso, Backend, DescriptorPool, Device};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PropagateLocals {
@@ -21,52 +20,50 @@ pub struct Propagation {
 impl Propagation {
     pub fn init(device: &mut <B as Backend>::Device) -> Self {
         let cs_propagate = device
-            .create_shader_module(
-                &::translate_shader(
-                    include_str!("../shader/propagate.comp"),
-                    pso::Stage::Compute,
-                ).unwrap()
-            ).unwrap();
+            .create_shader_module(&::translate_shader(
+                include_str!("../shader/propagate.comp"),
+                pso::Stage::Compute,
+            ).unwrap())
+            .unwrap();
 
         let set_layout = device.create_descriptor_set_layout(&[
-                pso::DescriptorSetLayoutBinding {
-                    binding: 0,
-                    ty: pso::DescriptorType::UniformBuffer,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 1,
-                    ty: pso::DescriptorType::StorageBuffer,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 2,
-                    ty: pso::DescriptorType::StorageBuffer,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 3,
-                    ty: pso::DescriptorType::StorageBuffer,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 4,
-                    ty: pso::DescriptorType::StorageBuffer,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 5,
-                    ty: pso::DescriptorType::StorageBuffer,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-            ],
-        );
+            pso::DescriptorSetLayoutBinding {
+                binding: 0,
+                ty: pso::DescriptorType::UniformBuffer,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+            pso::DescriptorSetLayoutBinding {
+                binding: 1,
+                ty: pso::DescriptorType::StorageBuffer,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+            pso::DescriptorSetLayoutBinding {
+                binding: 2,
+                ty: pso::DescriptorType::StorageBuffer,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+            pso::DescriptorSetLayoutBinding {
+                binding: 3,
+                ty: pso::DescriptorType::StorageBuffer,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+            pso::DescriptorSetLayoutBinding {
+                binding: 4,
+                ty: pso::DescriptorType::StorageBuffer,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+            pso::DescriptorSetLayoutBinding {
+                binding: 5,
+                ty: pso::DescriptorType::StorageBuffer,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+        ]);
 
         let mut pool = device.create_descriptor_pool(
             1, // sets
@@ -134,46 +131,44 @@ pub struct Correction {
 impl Correction {
     pub fn init(device: &mut <B as Backend>::Device) -> Self {
         let cs_correct = device
-            .create_shader_module(
-                &::translate_shader(
-                    include_str!("../shader/correction.comp"),
-                    pso::Stage::Compute,
-                ).unwrap(),
-            ).unwrap();
+            .create_shader_module(&::translate_shader(
+                include_str!("../shader/correction.comp"),
+                pso::Stage::Compute,
+            ).unwrap())
+            .unwrap();
 
         let set_layout = device.create_descriptor_set_layout(&[
-                pso::DescriptorSetLayoutBinding {
-                    binding: 0,
-                    ty: pso::DescriptorType::UniformBuffer,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 1,
-                    ty: pso::DescriptorType::StorageBuffer,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 2,
-                    ty: pso::DescriptorType::StorageBuffer,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 3,
-                    ty: pso::DescriptorType::StorageBuffer,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 4,
-                    ty: pso::DescriptorType::StorageImage,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::COMPUTE,
-                },
-            ],
-        );
+            pso::DescriptorSetLayoutBinding {
+                binding: 0,
+                ty: pso::DescriptorType::UniformBuffer,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+            pso::DescriptorSetLayoutBinding {
+                binding: 1,
+                ty: pso::DescriptorType::StorageBuffer,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+            pso::DescriptorSetLayoutBinding {
+                binding: 2,
+                ty: pso::DescriptorType::StorageBuffer,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+            pso::DescriptorSetLayoutBinding {
+                binding: 3,
+                ty: pso::DescriptorType::StorageBuffer,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+            pso::DescriptorSetLayoutBinding {
+                binding: 4,
+                ty: pso::DescriptorType::StorageImage,
+                count: 1,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,
+            },
+        ]);
 
         let mut pool = device.create_descriptor_pool(
             1, // sets
