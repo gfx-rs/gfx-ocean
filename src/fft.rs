@@ -15,33 +15,19 @@ pub struct Fft {
 
 impl Fft{
     pub fn init(device: &mut <B as Backend>::Device) -> Self {
-        #[cfg(feature = "vulkan")]
         let cs_fft_row = device
-            .create_shader_module_from_glsl(
-                include_str!("../shader/fft_row.comp"),
-                pso::Stage::Compute,
+            .create_shader_module(
+                &::translate_shader(
+                    include_str!("../shader/fft_row.comp"),
+                    pso::Stage::Compute,
+                ).unwrap(),
             ).unwrap();
-        #[cfg(feature = "vulkan")]
         let cs_fft_col = device
-            .create_shader_module_from_glsl(
-                include_str!("../shader/fft_col.comp"),
-                pso::Stage::Compute,
-            ).unwrap();
-        #[cfg(feature = "dx12")]
-        let cs_fft_row = device
-            .create_shader_module_from_source(
-                pso::Stage::Compute,
-                "fft_row",
-                "main",
-                include_bytes!("../shader/fft.hlsl"),
-            ).unwrap();
-        #[cfg(feature = "dx12")]
-        let cs_fft_col = device
-            .create_shader_module_from_source(
-                pso::Stage::Compute,
-                "fft_col",
-                "main",
-                include_bytes!("../shader/fft.hlsl"),
+            .create_shader_module(
+                &::translate_shader(
+                    include_str!("../shader/fft_col.comp"),
+                    pso::Stage::Compute,
+                ).unwrap(),
             ).unwrap();
 
         let set_layout = device.create_descriptor_set_layout(&[
@@ -104,6 +90,12 @@ impl Fft{
     }
 
     pub fn destroy(self, device: &mut <B as Backend>::Device) {
-        //  TODO
+        device.destroy_shader_module(self.cs_fft_row);
+        device.destroy_shader_module(self.cs_fft_col);
+        device.destroy_descriptor_set_layout(self.set_layout);
+        device.destroy_pipeline_layout(self.layout);
+        device.destroy_compute_pipeline(self.row_pass);
+        device.destroy_compute_pipeline(self.col_pass);
+        device.destroy_descriptor_pool(self.pool);
     }
 }

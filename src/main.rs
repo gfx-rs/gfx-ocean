@@ -13,11 +13,13 @@ extern crate gfx_backend_vulkan as back;
 extern crate winit;
 extern crate time;
 extern crate panopaea;
+extern crate glsl_to_spirv;
 
 use hal::{buffer as b, command, device as d, format as f, image as i, memory as m, pass, pool, pso};
 use hal::{
-    Device, FrameSync, Gpu, Instance, QueueFamily, Submission, Surface, PhysicalDevice,
-    DescriptorPool, IndexType, Primitive, Swapchain, SwapchainConfig, Backbuffer};
+    Device, FrameSync, Instance, Submission, Surface, PhysicalDevice,
+    DescriptorPool, IndexType, Primitive, Swapchain, SwapchainConfig, Backbuffer,
+};
 use hal::command::{ClearColor, ClearValue, Rect, Viewport};
 use hal::format::{AsFormat, Format, Rgba8Srgb as ColorFormat, Swizzle};
 
@@ -59,6 +61,26 @@ const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
     layers: 0 .. 1,
 };
 
+fn translate_shader(code: &str, stage: pso::Stage) -> Result<Vec<u8>, String> {
+    use glsl_to_spirv::{compile, ShaderType};
+    use std::io::Read;
+
+    let ty = match stage {
+        pso::Stage::Vertex => ShaderType::Vertex,
+        pso::Stage::Fragment => ShaderType::Fragment,
+        pso::Stage::Geometry => ShaderType::Geometry,
+        pso::Stage::Hull => ShaderType::TessellationControl,
+        pso::Stage::Domain => ShaderType::TessellationEvaluation,
+        pso::Stage::Compute => ShaderType::Compute,
+    };
+
+    compile(code, ty).map(|mut out| {
+        let mut code = Vec::new();
+        out.read_to_end(&mut code).unwrap();
+        code
+    })
+}
+
 #[cfg(any(feature = "vulkan", feature = "dx12"))]
 fn main() {
     env_logger::init().unwrap();
@@ -96,18 +118,15 @@ fn main() {
         .physical_device
         .memory_properties()
         .memory_types;
-    let Gpu { mut device, mut queue_groups } =
-        adapter.open_with(|family| {
-            if family.supports_compute() &&
-               family.supports_graphics() &&
-               surface.supports_queue_family(family) {
+    let (mut device, mut queue_group) =
+        adapter.open_with::<_, hal::General>(|family| {
+            if surface.supports_queue_family(family) {
                 Some(1)
             } else {
                 None
             }
         }).unwrap();
 
-    let mut queue_group = hal::QueueGroup::<_, hal::General>::new(queue_groups.remove(0));
     let mut general_pool = device.create_command_pool_typed(&queue_group, pool::CommandPoolCreateFlags::empty(), 4);
     let mut queue = &mut queue_group.queues[0];
 
@@ -132,34 +151,20 @@ fn main() {
     let mut frame_semaphore = device.create_semaphore();
     let mut frame_fence = device.create_fence(false);
 
-    #[cfg(feature = "vulkan")]
     let vs_ocean = device
-        .create_shader_module_from_glsl(
-            include_str!("../shader/ocean.vert"),
-            pso::Stage::Vertex,
-        ).unwrap();
-    #[cfg(feature = "vulkan")]
-    let fs_ocean = device
-        .create_shader_module_from_glsl(
-            include_str!("../shader/ocean.frag"),
-            pso::Stage::Fragment,
+        .create_shader_module(
+            &translate_shader(
+                include_str!("../shader/ocean.vert"),
+                pso::Stage::Vertex,
+            ).unwrap()
         ).unwrap();
 
-    #[cfg(feature = "dx12")]
-    let vs_ocean = device
-        .create_shader_module_from_source(
-            pso::Stage::Vertex,
-            "ocean_vs", // TODO
-            "main",
-            include_bytes!("../shader/ocean.hlsl"),
-        ).unwrap();
-    #[cfg(feature = "dx12")]
     let fs_ocean = device
-        .create_shader_module_from_source(
-            pso::Stage::Fragment,
-            "ocean_ps", // TODO
-            "main",
-            include_bytes!("../shader/ocean.hlsl"),
+        .create_shader_module(
+            &translate_shader(
+                include_str!("../shader/ocean.frag"),
+                pso::Stage::Fragment,
+            ).unwrap()
         ).unwrap();
 
     let fft = fft::Fft::init(&mut device);
@@ -333,7 +338,7 @@ fn main() {
 
         {
             let mut locals = device
-                .acquire_mapping_writer::<Locals>(&locals_buffer, 0..buffer_len)
+                .acquire_mapping_writer::<Locals>(&buffer_memory, 0..buffer_len)
                 .unwrap();
             locals[0] = Locals {
                 a_proj: perspective.into(),
@@ -367,7 +372,7 @@ fn main() {
 
         {
             let mut vertices = device
-                .acquire_mapping_writer::<Vertex>(&vertex_buffer, 0..buffer_len)
+                .acquire_mapping_writer::<Vertex>(&buffer_memory, 0..buffer_len)
                 .unwrap();
             for z in 0..HALF_RESOLUTION {
                 for x in 0..HALF_RESOLUTION {
@@ -404,7 +409,7 @@ fn main() {
 
         {
             let mut patch = device
-                .acquire_mapping_writer::<PatchOffset>(&buffer, 0..buffer_len)
+                .acquire_mapping_writer::<PatchOffset>(&buffer_memory, 0..buffer_len)
                 .unwrap();
             patch[0] = PatchOffset {
                 a_offset: [0.0, 0.0],
@@ -445,7 +450,7 @@ fn main() {
 
         {
             let mut indices = device
-                .acquire_mapping_writer::<u32>(&index_buffer, 0..buffer_len)
+                .acquire_mapping_writer::<u32>(&buffer_memory, 0..buffer_len)
                 .unwrap();
             for z in 0..HALF_RESOLUTION-1 {
                 for x in 0..HALF_RESOLUTION-1 {
@@ -564,7 +569,7 @@ fn main() {
 
         {
             let mut locals = device
-                .acquire_mapping_writer::<CorrectionLocals>(&locals_buffer, 0..buffer_len)
+                .acquire_mapping_writer::<CorrectionLocals>(&buffer_memory, 0..buffer_len)
                 .unwrap();
             locals[0] = CorrectionLocals {
                 resolution: RESOLUTION as _,
@@ -637,7 +642,7 @@ fn main() {
 
         {
             let mut data = device
-                .acquire_mapping_writer::<f32>(&staging_buffer, 0..buffer_len)
+                .acquire_mapping_writer::<f32>(&buffer_memory, 0..buffer_len)
                 .unwrap();
             data.copy_from_slice(&omega.into_raw_vec());
             device.release_mapping_writer(data);
@@ -667,7 +672,7 @@ fn main() {
 
         {
             let mut data = device
-                .acquire_mapping_writer::<[f32; 2]>(&staging_buffer, 0..buffer_len)
+                .acquire_mapping_writer::<[f32; 2]>(&buffer_memory, 0..buffer_len)
                 .unwrap();
             // TODO: slow
             let spectrum = height_spectrum
@@ -923,7 +928,7 @@ fn main() {
         // Update view
         camera.update(time_elapsed_s);
         let mut locals = device
-            .acquire_mapping_writer::<Locals>(&locals_buffer, 0..std::mem::size_of::<Locals>() as u64)
+            .acquire_mapping_writer::<Locals>(&locals_memory, 0..std::mem::size_of::<Locals>() as u64)
             .unwrap();
         locals[0] = Locals {
             a_proj: perspective.into(),
@@ -932,7 +937,7 @@ fn main() {
         device.release_mapping_writer(locals);
 
         let mut locals = device
-            .acquire_mapping_writer::<PropagateLocals>(&propagate_locals_buffer, 0..std::mem::size_of::<PropagateLocals>() as u64)
+            .acquire_mapping_writer::<PropagateLocals>(&propagate_locals_memory, 0..std::mem::size_of::<PropagateLocals>() as u64)
             .unwrap();
         locals[0] = PropagateLocals {
             time: time_current_s,
