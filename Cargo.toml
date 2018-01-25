@@ -6,6 +6,7 @@ version = "0.1.0"
 default = []
 dx12 = ["gfx-backend-dx12"]
 vulkan = ["gfx-backend-vulkan"]
+metal = ["gfx-backend-metal"]
 
 [[bin]]
 name = "ocean"
@@ -24,3 +25,6 @@ gfx-backend-vulkan = { git = "https://github.com/gfx-rs/gfx.git", rev= "5214237"
 
 [target.'cfg(windows)'.dependencies]
 gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", rev= "5214237" , optional = true}
+
+[target.'cfg(target_os = "macos")'.dependencies]
+gfx-backend-metal = { git = "https://github.com/gfx-rs/gfx.git", rev= "5214237" , optional = true}

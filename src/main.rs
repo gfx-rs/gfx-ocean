@@ -1,4 +1,4 @@
-#![cfg_attr(not(any(feature = "vulkan", feature = "dx12")),
+#![cfg_attr(not(any(feature = "vulkan", feature = "dx12", feature = "metal")),
             allow(dead_code, unused_extern_crates, unused_imports))]
 
 extern crate cgmath;
@@ -7,6 +7,8 @@ extern crate env_logger;
 extern crate gfx_backend_dx12 as back;
 #[cfg(feature = "vulkan")]
 extern crate gfx_backend_vulkan as back;
+#[cfg(feature = "metal")]
+extern crate gfx_backend_metal as back;
 extern crate gfx_hal as hal;
 extern crate glsl_to_spirv;
 extern crate panopaea;
@@ -21,13 +23,13 @@ use hal::format::{AsFormat, Format, Rgba8Srgb as ColorFormat, Swizzle};
 
 use panopaea::ocean::empirical;
 
-#[cfg(any(feature = "vulkan", feature = "dx12"))]
+#[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
 use ocean::{CorrectionLocals, PropagateLocals};
 
 mod camera;
-#[cfg(any(feature = "vulkan", feature = "dx12"))]
+#[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
 mod fft;
-#[cfg(any(feature = "vulkan", feature = "dx12"))]
+#[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
 mod ocean;
 
 #[derive(Debug, Clone, Copy)]
@@ -77,7 +79,7 @@ fn translate_shader(code: &str, stage: pso::Stage) -> Result<Vec<u8>, String> {
     })
 }
 
-#[cfg(any(feature = "vulkan", feature = "dx12"))]
+#[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
 fn main() {
     env_logger::init().unwrap();
     let mut events_loop = winit::EventsLoop::new();
@@ -1232,7 +1234,7 @@ fn align_up(value: u64, alignment: u64) -> u64 {
     ((value + alignment - 1) / alignment) * alignment
 }
 
-#[cfg(not(any(feature = "vulkan", feature = "dx12")))]
+#[cfg(not(any(feature = "vulkan", feature = "dx12", feature = "metal")))]
 fn main() {
-    println!("You need to enable the one of the following API backends: vulkan or dx12");
+    println!("You need to enable the one of the following API backends: vulkan, dx12 or metal");
 }
