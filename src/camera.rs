@@ -103,4 +103,8 @@ impl Camera {
         let view_dir = self.get_view_dir();
         cgmath::Matrix4::look_at(self.pos, self.pos + view_dir, self.up).into()
     }
+
+    pub fn position(&self) -> [f32; 3] {
+        self.pos.into()
+    }
 }

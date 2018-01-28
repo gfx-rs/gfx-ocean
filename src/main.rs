@@ -15,6 +15,9 @@ extern crate panopaea;
 extern crate time;
 extern crate winit;
 
+use std::fs;
+use std::io::Read;
+
 use hal::{buffer as b, command, device as d, format as f, image as i, memory as m, pass, pool, pso};
 use hal::{Backbuffer, DescriptorPool, Device, FrameSync, IndexType, Instance, PhysicalDevice,
           Primitive, Submission, Surface, Swapchain, SwapchainConfig};
@@ -48,6 +51,7 @@ struct PatchOffset {
 struct Locals {
     a_proj: [[f32; 4]; 4],
     a_view: [[f32; 4]; 4],
+    a_cam_pos: [f32; 3]
 }
 
 const RESOLUTION: usize = 512;
@@ -146,7 +150,7 @@ fn main() {
     let mut frame_semaphore = device.create_semaphore();
     let mut frame_fence = device.create_fence(false);
 
-    let depth_format = f::Format::D32Float;
+    let depth_format = f::Format::D32FloatS8Uint;
     let depth_image = device.create_image(
         i::Kind::D2(pixel_width, pixel_height, i::AaMode::Single),
         1,
@@ -180,19 +184,31 @@ fn main() {
        },
     ).unwrap();
 
-    let vs_ocean = device
+    let vs_ocean = {
+        let mut file = fs::File::open("shader/ocean.vert").unwrap();
+        let mut shader = String::new();
+        file.read_to_string(&mut shader);
+
+        device
         .create_shader_module(&translate_shader(
-            include_str!("../shader/ocean.vert"),
+            &shader,
             pso::Stage::Vertex,
         ).unwrap())
-        .unwrap();
+        .unwrap()
+    };
 
-    let fs_ocean = device
+    let fs_ocean = {
+        let mut file = fs::File::open("shader/ocean.frag").unwrap();
+        let mut shader = String::new();
+        file.read_to_string(&mut shader);
+
+        device
         .create_shader_module(&translate_shader(
-            include_str!("../shader/ocean.frag"),
+            &shader,
             pso::Stage::Fragment,
         ).unwrap())
-        .unwrap();
+        .unwrap()
+    };
 
     let fft = fft::Fft::init(&mut device);
     let propagate = ocean::Propagation::init(&mut device);
@@ -203,7 +219,7 @@ fn main() {
             binding: 0,
             ty: pso::DescriptorType::UniformBuffer,
             count: 1,
-            stage_flags: pso::ShaderStageFlags::VERTEX,
+            stage_flags: pso::ShaderStageFlags::VERTEX | pso::ShaderStageFlags::FRAGMENT,
         },
         pso::DescriptorSetLayoutBinding {
             binding: 1,
@@ -408,6 +424,7 @@ fn main() {
             locals[0] = Locals {
                 a_proj: perspective.into(),
                 a_view: camera.view().into(),
+                a_cam_pos: camera.position(),
             };
             device.release_mapping_writer(locals);
         }
@@ -702,8 +719,8 @@ fn main() {
         surface_tension: 0.072,
         gravity: 9.81,
 
-        swell: 0.25,
-        domain_size: 800.0,
+        swell: 0.6,
+        domain_size: 1000.0,
     };
 
     let spectrum = empirical::SpectrumTMA {
@@ -1054,6 +1071,7 @@ fn main() {
         locals[0] = Locals {
             a_proj: perspective.into(),
             a_view: camera.view().into(),
+            a_cam_pos: camera.position(),
         };
         device.release_mapping_writer(locals);
 
