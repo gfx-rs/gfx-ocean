@@ -713,13 +713,13 @@ fn main() {
     let parameters = empirical::Parameters {
         water_depth: 100.0,
         fetch: 800.0 * 1000.0,
-        wind_speed: 25.0,
+        wind_speed: 20.0,
 
         water_density: 1000.0,
         surface_tension: 0.072,
         gravity: 9.81,
 
-        swell: 0.6,
+        swell: 0.0,
         domain_size: 1000.0,
     };
 

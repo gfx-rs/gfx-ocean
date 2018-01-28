@@ -19,8 +19,8 @@ layout(set = 0, binding = 2) uniform sampler u_Sampler;
 
 void main() {
     vec3 displacement = texture(sampler2D(u_Texture, u_Sampler), a_Uv).xyz;
-    displacement.y /= 4.0;
-    displacement.xz /= 4.0;
+    displacement.y /= 3.0;
+    displacement.xz /= 3.5;
 
     vec3 pos = a_Pos + displacement + vec3(a_offset.x, 0.0, a_offset.y);
     gl_Position = u_proj * u_view * vec4(pos, 1.0);
