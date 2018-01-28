@@ -58,12 +58,12 @@ void main() {
     float z0 = textureOffset(sampler2D(u_Texture, u_Sampler), p_Uv, ivec2(0.0, -1.0)).x;
     float z1 = textureOffset(sampler2D(u_Texture, u_Sampler), p_Uv, ivec2(0.0, 1.0)).x;
 
-    vec3 na = normalize(vec3(diff.x, 0.0, (x1-x0) / height_scale));
-    vec3 nb = normalize(vec3(0.0, diff.y, (z1-z0) / height_scale));
+    // vec3 na = normalize(vec3(diff.x, 0.0, (x1-x0) / height_scale));
+    // vec3 nb = normalize(vec3(0.0, diff.y, (z1-z0) / height_scale));
 
+    vec3 na = normalize(vec3(-diff.x, (x1-x0) / height_scale, 0.0));
+    vec3 nb = normalize(vec3(0.0, (z1-z0) / height_scale, diff.y));
     vec3 N = normalize(cross(na, nb));
-    N.xyz = N.xzy;
-    N.z *= -1.0;
 
     // Stylized ocean rendering
     float depth = 1.0 - pow(clamp((p_PosWorld.y + 10.0) / 50.0, 0.0, 1.5), 1.2);
