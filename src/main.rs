@@ -18,7 +18,7 @@ extern crate winit;
 use hal::{buffer as b, command, device as d, format as f, image as i, memory as m, pass, pool, pso};
 use hal::{Backbuffer, DescriptorPool, Device, FrameSync, IndexType, Instance, PhysicalDevice,
           Primitive, Submission, Surface, Swapchain, SwapchainConfig};
-use hal::command::{ClearColor, ClearValue, Rect, Viewport};
+use hal::command::{ClearColor, ClearDepthStencil, ClearValue, Rect, Viewport};
 use hal::format::{AsFormat, Format, Rgba8Srgb as ColorFormat, Swizzle};
 
 use panopaea::ocean::empirical;
@@ -146,6 +146,40 @@ fn main() {
     let mut frame_semaphore = device.create_semaphore();
     let mut frame_fence = device.create_fence(false);
 
+    let depth_format = f::Format::D32Float;
+    let depth_image = device.create_image(
+        i::Kind::D2(pixel_width, pixel_height, i::AaMode::Single),
+        1,
+        depth_format,
+        i::Usage::DEPTH_STENCIL_ATTACHMENT,
+    ).unwrap();
+
+    let depth_mem_reqs = device.get_image_requirements(&depth_image);
+
+    let mem_type = memory_types
+        .iter()
+        .enumerate()
+        .position(|(id, mem_type)| {
+            depth_mem_reqs.type_mask & (1 << id) != 0 &&
+            mem_type.properties.contains(m::Properties::DEVICE_LOCAL)
+        })
+        .unwrap()
+        .into();
+
+    let depth_memory = device.allocate_memory(mem_type, depth_mem_reqs.size).unwrap();
+    let depth_image = device.bind_image_memory(&depth_memory, 0, depth_image).unwrap();
+
+    let depth_view = device.create_image_view(
+        &depth_image,
+        depth_format,
+        f::Swizzle::NO,
+        i::SubresourceRange {
+           aspects: f::AspectFlags::DEPTH,
+           levels: 0 .. 1,
+           layers: 0 .. 1,
+       },
+    ).unwrap();
+
     let vs_ocean = device
         .create_shader_module(&translate_shader(
             include_str!("../shader/ocean.vert"),
@@ -175,13 +209,13 @@ fn main() {
             binding: 1,
             ty: pso::DescriptorType::SampledImage,
             count: 1,
-            stage_flags: pso::ShaderStageFlags::VERTEX,
+            stage_flags: pso::ShaderStageFlags::VERTEX | pso::ShaderStageFlags::FRAGMENT,
         },
         pso::DescriptorSetLayoutBinding {
             binding: 2,
             ty: pso::DescriptorType::Sampler,
             count: 1,
-            stage_flags: pso::ShaderStageFlags::VERTEX,
+            stage_flags: pso::ShaderStageFlags::VERTEX | pso::ShaderStageFlags::FRAGMENT,
         },
     ]);
 
@@ -197,14 +231,21 @@ fn main() {
             layouts: i::ImageLayout::Undefined..i::ImageLayout::Present,
         };
 
+        let depth_attachment = pass::Attachment {
+            format: Some(depth_format),
+            ops: pass::AttachmentOps::new(pass::AttachmentLoadOp::Clear, pass::AttachmentStoreOp::DontCare),
+            stencil_ops: pass::AttachmentOps::DONT_CARE,
+            layouts: i::ImageLayout::Undefined .. i::ImageLayout::DepthStencilAttachmentOptimal,
+        };
+
         let subpass = pass::SubpassDesc {
             colors: &[(0, i::ImageLayout::ColorAttachmentOptimal)],
-            depth_stencil: None,
+            depth_stencil: Some(&(1, i::ImageLayout::DepthStencilAttachmentOptimal)),
             inputs: &[],
             preserves: &[],
         };
 
-        device.create_render_pass(&[attachment], &[subpass], &[])
+        device.create_render_pass(&[attachment, depth_attachment], &[subpass], &[])
     };
 
     let extent = d::Extent {
@@ -216,7 +257,7 @@ fn main() {
         .iter()
         .map(|&(_, ref rtv)| {
             device
-                .create_framebuffer(&ocean_pass, &[rtv], extent)
+                .create_framebuffer(&ocean_pass, &[rtv, &depth_view], extent)
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -252,7 +293,7 @@ fn main() {
             shader_entries,
             Primitive::TriangleList,
             pso::Rasterizer {
-                polygon_mode: pso::PolygonMode::Line(1.0),
+                polygon_mode: pso::PolygonMode::Fill,
                 cull_face: None,
                 front_face: pso::FrontFace::CounterClockwise,
                 depth_clamping: false,
@@ -262,6 +303,18 @@ fn main() {
             &ocean_layout,
             subpass,
         );
+
+        ocean_pipe_desc.depth_stencil = Some(
+            pso::DepthStencilDesc {
+                depth: pso::DepthTest::On {
+                    fun: pso::Comparison::LessEqual,
+                    write: true,
+                },
+                depth_bounds: false,
+                stencil: pso::StencilTest::Off,
+            }
+        );
+        ocean_pipe_desc.rasterizer.depth_clamping = false;
         ocean_pipe_desc.blender.targets.push(pso::ColorBlendDesc(
             pso::ColorMask::ALL,
             pso::BlendState::Off,
@@ -1135,7 +1188,7 @@ fn main() {
                 range: COLOR_RANGE,
             };
             cmd_buffer.pipeline_barrier(
-                pso::PipelineStage::COMPUTE_SHADER..pso::PipelineStage::VERTEX_SHADER,
+                pso::PipelineStage::COMPUTE_SHADER..pso::PipelineStage::VERTEX_SHADER|pso::PipelineStage::FRAGMENT_SHADER,
                 &[image_barrier],
             );
 
@@ -1163,7 +1216,10 @@ fn main() {
                         w: pixel_width,
                         h: pixel_height,
                     },
-                    &[ClearValue::Color(ClearColor::Float([0.6, 0.6, 0.6, 1.0]))],
+                    &[
+                        ClearValue::Color(ClearColor::Float([0.6, 0.6, 0.6, 1.0])),
+                        ClearValue::DepthStencil(ClearDepthStencil(1.0, 0)),
+                    ],
                 );
                 let num_indices = 6 * (HALF_RESOLUTION - 1) * (HALF_RESOLUTION - 1);
                 encoder.draw_indexed(0..num_indices as u32, 0, 0..4);
