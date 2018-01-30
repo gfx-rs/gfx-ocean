@@ -4,7 +4,7 @@
 </h1>
 
 <h4 align="center">
-`gfx_hal` demo for simulating a FFT <a href="https://i.imgur.com/AQIxWod.mp4">ocean</a> using compute shaders.
+`gfx_hal` demo for simulating a FFT <a href="https://streamable.com/nr97c">ocean</a> using compute shaders.
 <br><br>
 <img src="https://i.imgur.com/qn01JE5.png">
 </h4>
