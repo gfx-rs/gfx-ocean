@@ -51,7 +51,8 @@ struct PatchOffset {
 struct Locals {
     a_proj: [[f32; 4]; 4],
     a_view: [[f32; 4]; 4],
-    a_cam_pos: [f32; 3]
+    a_cam_pos: [f32; 3],
+    _pad: [f32; 1],
 }
 
 const RESOLUTION: usize = 512;
@@ -150,7 +151,7 @@ fn main() {
     let mut frame_semaphore = device.create_semaphore();
     let mut frame_fence = device.create_fence(false);
 
-    let depth_format = f::Format::D32FloatS8Uint;
+    let depth_format = f::Format::D32Float;
     let depth_image = device.create_image(
         i::Kind::D2(pixel_width, pixel_height, i::AaMode::Single),
         1,
@@ -425,6 +426,7 @@ fn main() {
                 a_proj: perspective.into(),
                 a_view: camera.view().into(),
                 a_cam_pos: camera.position(),
+                _pad: [0.0; 1],
             };
             device.release_mapping_writer(locals);
         }
@@ -1072,6 +1074,7 @@ fn main() {
             a_proj: perspective.into(),
             a_view: camera.view().into(),
             a_cam_pos: camera.position(),
+            _pad: [0.0; 1],
         };
         device.release_mapping_writer(locals);
 
