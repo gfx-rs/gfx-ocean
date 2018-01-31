@@ -87,6 +87,9 @@ fn translate_shader(code: &str, stage: pso::Stage) -> Result<Vec<u8>, String> {
 #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
 fn main() {
     env_logger::init().unwrap();
+    #[cfg(feature = "metal")]
+    let mut autorelease_pool = unsafe { back::AutoreleasePool::new() };
+
     let mut events_loop = winit::EventsLoop::new();
     let wb = winit::WindowBuilder::new()
         .with_dimensions(1200, 800)
@@ -1265,6 +1268,11 @@ fn main() {
 
         device.wait_for_fences(&[&frame_fence], d::WaitFor::All, !0);
         swap_chain.present(&mut queue, &[]);
+
+        #[cfg(feature = "metal")]
+        unsafe {
+            autorelease_pool.reset();
+        }
     }
 
     // cleanup
