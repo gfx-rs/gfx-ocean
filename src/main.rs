@@ -133,13 +133,7 @@ fn main() {
     let memory_types = adapter.physical_device.memory_properties().memory_types;
 
     let (mut device, mut queue_group) = adapter
-        .open_with::<_, hal::General>(|family| {
-            if surface.supports_queue_family(family) {
-                Some(1)
-            } else {
-                None
-            }
-        })
+        .open_with::<_, hal::General>(1, |family| surface.supports_queue_family(family))
         .unwrap();
 
     let mut general_pool =
