@@ -22,7 +22,7 @@ use hal::{buffer as b, command, device as d, format as f, image as i, memory as 
 use hal::{Backbuffer, DescriptorPool, Device, FrameSync, IndexType, Instance, PhysicalDevice,
           Primitive, Submission, Surface, Swapchain, SwapchainConfig};
 use hal::command::{ClearColor, ClearDepthStencil, ClearValue, Rect, Viewport};
-use hal::format::{AsFormat, Format, Rgba8Srgb as ColorFormat, Swizzle};
+use hal::format::{ChannelType, Format, Swizzle};
 
 use panopaea::ocean::empirical;
 
@@ -116,7 +116,22 @@ fn main() {
     };
 
     let adapter = adapters.remove(0);
+    let surface_format = surface
+        .capabilities_and_formats(&adapter.physical_device)
+        .1
+        .map_or(
+            f::Format::Rgba8Srgb,
+            |formats| {
+                formats
+                    .into_iter()
+                    .find(|format| {
+                        format.base_format().1 == ChannelType::Srgb
+                    })
+                    .unwrap()
+            }
+        );
     let memory_types = adapter.physical_device.memory_properties().memory_types;
+
     let (mut device, mut queue_group) = adapter
         .open_with::<_, hal::General>(|family| {
             if surface.supports_queue_family(family) {
@@ -131,7 +146,7 @@ fn main() {
         device.create_command_pool_typed(&queue_group, pool::CommandPoolCreateFlags::empty(), 4);
     let mut queue = &mut queue_group.queues[0];
 
-    let swap_config = SwapchainConfig::new().with_color(ColorFormat::SELF);
+    let swap_config = SwapchainConfig::new().with_color(surface_format);
 
     let (mut swap_chain, backbuffer) = device.create_swapchain(&mut surface, swap_config);
 
@@ -140,7 +155,7 @@ fn main() {
             .into_iter()
             .map(|image| {
                 let rtv = device
-                    .create_image_view(&image, ColorFormat::SELF, Swizzle::NO, COLOR_RANGE)
+                    .create_image_view(&image, surface_format, Swizzle::NO, COLOR_RANGE)
                     .unwrap();
                 (image, rtv)
             })
@@ -239,7 +254,7 @@ fn main() {
     let ocean_layout = device.create_pipeline_layout(&[&set_layout], &[]);
     let ocean_pass = {
         let attachment = pass::Attachment {
-            format: Some(ColorFormat::SELF),
+            format: Some(surface_format),
             ops: pass::AttachmentOps::new(
                 pass::AttachmentLoadOp::Clear,
                 pass::AttachmentStoreOp::Store,
