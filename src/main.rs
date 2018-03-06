@@ -1044,22 +1044,29 @@ fn main() {
     let mut running = true;
     while running {
         events_loop.poll_events(|event| {
-            if let winit::Event::WindowEvent { event, .. } = event {
-                match event {
-                    winit::WindowEvent::KeyboardInput {
-                        input:
-                            winit::KeyboardInput {
-                                virtual_keycode: Some(winit::VirtualKeyCode::Escape),
-                                ..
-                            },
-                        ..
+            match event {
+                winit::Event::WindowEvent { event, .. } => {
+                    match event {
+                        winit::WindowEvent::KeyboardInput {
+                            input:
+                                winit::KeyboardInput {
+                                    virtual_keycode: Some(winit::VirtualKeyCode::Escape),
+                                    ..
+                                },
+                            ..
+                        }
+                        | winit::WindowEvent::Closed => running = false,
+                        winit::WindowEvent::KeyboardInput { input, .. } => {
+                            camera.on_keyboard(input);
+                        }
+                        _ => (),
                     }
-                    | winit::WindowEvent::Closed => running = false,
-                    winit::WindowEvent::KeyboardInput { input, .. } => {
-                        camera.on_event(input);
-                    }
-                    _ => (),
                 }
+                winit::Event::DeviceEvent {
+                    event: winit::DeviceEvent::MouseMotion { delta }, .. } => {
+                        camera.on_mouse(delta);
+                }
+                _ => (),
             }
         });
 

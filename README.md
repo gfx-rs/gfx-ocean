@@ -17,4 +17,5 @@
 
 ## Camera Controls
 - Forwards/Backwards: `W`/`S`
-- Pitch/Yaw: Arrow Keys
+- Strafe Left/Right: `A`/`D`
+- Pitch/Yaw: Arrow Keys or Mouse
