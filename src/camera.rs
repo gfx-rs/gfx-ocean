@@ -67,15 +67,7 @@ impl Camera {
         self.rotation.0 = self.rotation.0 - view_rot_speed * dx;
         self.rotation.1 = self.rotation.1 - view_rot_speed * dy;
 
-        // clamping
-        let min_y_rotation = cgmath::Rad(-1.0f32);
-        let max_y_rotation = cgmath::Rad(1.0f32);
-        if self.rotation.1 < min_y_rotation {
-            self.rotation.1 = min_y_rotation;
-        }
-        if self.rotation.1 > max_y_rotation {
-            self.rotation.1 = max_y_rotation;
-        }
+        self.clamp_pitch();
     }
 
     pub fn update(&mut self, dt: f32) {
@@ -112,15 +104,7 @@ impl Camera {
             self.rotation.1 = self.rotation.1 - view_rot_speed * dt;
         }
 
-        // clamping
-        let min_y_rotation = cgmath::Rad(-1.0f32);
-        let max_y_rotation = cgmath::Rad(1.0f32);
-        if self.rotation.1 < min_y_rotation {
-            self.rotation.1 = min_y_rotation;
-        }
-        if self.rotation.1 > max_y_rotation {
-            self.rotation.1 = max_y_rotation;
-        }
+        self.clamp_pitch();
     }
 
     fn get_view_dir(&self) -> cgmath::Vector3<f32> {
@@ -145,5 +129,18 @@ impl Camera {
 
     pub fn position(&self) -> [f32; 3] {
         self.pos.into()
+    }
+
+    fn clamp_pitch(&mut self) {
+        // clamp to a little less than [-pi/2, pi/2]
+        let min_y_rotation = cgmath::Rad(-1.5f32);
+        let max_y_rotation = cgmath::Rad(1.5f32);
+
+        if self.rotation.1 < min_y_rotation {
+            self.rotation.1 = min_y_rotation;
+        }
+        if self.rotation.1 > max_y_rotation {
+            self.rotation.1 = max_y_rotation;
+        }
     }
 }
