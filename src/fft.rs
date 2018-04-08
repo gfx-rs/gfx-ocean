@@ -46,8 +46,8 @@ impl Fft {
             ],
         );
 
-        let desc_sets = pool.allocate_sets(&[&set_layout, &set_layout, &set_layout]);
-        let layout = device.create_pipeline_layout(&[&set_layout], &[]);
+        let desc_sets = pool.allocate_sets(vec![&set_layout, &set_layout, &set_layout]);
+        let layout = device.create_pipeline_layout(Some(&set_layout), &[]);
         let (row_pass, col_pass) = {
             let mut pipelines = device.create_compute_pipelines(&[
                 pso::ComputePipelineDesc::new(

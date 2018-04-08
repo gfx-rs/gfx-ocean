@@ -18,10 +18,10 @@ extern crate winit;
 use std::fs;
 use std::io::Read;
 
-use hal::{buffer as b, command, device as d, format as f, image as i, memory as m, pass, pool, pso};
+use hal::{buffer as b, command, format as f, image as i, memory as m, pass, pool, pso};
 use hal::{Backbuffer, DescriptorPool, Device, FrameSync, IndexType, Instance, PhysicalDevice,
           Primitive, Submission, Surface, Swapchain, SwapchainConfig};
-use hal::command::{ClearColor, ClearDepthStencil, ClearValue, Rect, Viewport};
+use hal::command::{ClearColor, ClearDepthStencil, ClearValue};
 use hal::format::{ChannelType, Format, Swizzle};
 
 use panopaea::ocean::empirical;
@@ -59,7 +59,7 @@ const RESOLUTION: usize = 512;
 const HALF_RESOLUTION: usize = 128;
 
 const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
-    aspects: f::AspectFlags::COLOR,
+    aspects: f::Aspects::COLOR,
     levels: 0..1,
     layers: 0..1,
 };
@@ -152,7 +152,7 @@ fn main() {
             .into_iter()
             .map(|image| {
                 let rtv = device
-                    .create_image_view(&image, surface_format, Swizzle::NO, COLOR_RANGE)
+                    .create_image_view(&image, i::ViewKind::D2, surface_format, Swizzle::NO, COLOR_RANGE)
                     .unwrap();
                 (image, rtv)
             })
@@ -165,10 +165,12 @@ fn main() {
 
     let depth_format = f::Format::D32Float;
     let depth_image = device.create_image(
-        i::Kind::D2(pixel_width, pixel_height, i::AaMode::Single),
+        i::Kind::D2(pixel_width as _, pixel_height as _, 1, 1),
         1,
         depth_format,
+        i::Tiling::Optimal,
         i::Usage::DEPTH_STENCIL_ATTACHMENT,
+        i::StorageFlags::empty(),
     ).unwrap();
 
     let depth_mem_reqs = device.get_image_requirements(&depth_image);
@@ -188,10 +190,11 @@ fn main() {
 
     let depth_view = device.create_image_view(
         &depth_image,
+        i::ViewKind::D2,
         depth_format,
         f::Swizzle::NO,
         i::SubresourceRange {
-           aspects: f::AspectFlags::DEPTH,
+           aspects: f::Aspects::DEPTH,
            levels: 0 .. 1,
            layers: 0 .. 1,
        },
@@ -248,7 +251,7 @@ fn main() {
         },
     ]);
 
-    let ocean_layout = device.create_pipeline_layout(&[&set_layout], &[]);
+    let ocean_layout = device.create_pipeline_layout(Some(&set_layout), &[]);
     let ocean_pass = {
         let attachment = pass::Attachment {
             format: Some(surface_format),
@@ -257,19 +260,19 @@ fn main() {
                 pass::AttachmentStoreOp::Store,
             ),
             stencil_ops: pass::AttachmentOps::DONT_CARE,
-            layouts: i::ImageLayout::Undefined..i::ImageLayout::Present,
+            layouts: i::Layout::Undefined..i::Layout::Present,
         };
 
         let depth_attachment = pass::Attachment {
             format: Some(depth_format),
             ops: pass::AttachmentOps::new(pass::AttachmentLoadOp::Clear, pass::AttachmentStoreOp::DontCare),
             stencil_ops: pass::AttachmentOps::DONT_CARE,
-            layouts: i::ImageLayout::Undefined .. i::ImageLayout::DepthStencilAttachmentOptimal,
+            layouts: i::Layout::Undefined .. i::Layout::DepthStencilAttachmentOptimal,
         };
 
         let subpass = pass::SubpassDesc {
-            colors: &[(0, i::ImageLayout::ColorAttachmentOptimal)],
-            depth_stencil: Some(&(1, i::ImageLayout::DepthStencilAttachmentOptimal)),
+            colors: &[(0, i::Layout::ColorAttachmentOptimal)],
+            depth_stencil: Some(&(1, i::Layout::DepthStencilAttachmentOptimal)),
             inputs: &[],
             preserves: &[],
         };
@@ -277,7 +280,7 @@ fn main() {
         device.create_render_pass(&[attachment, depth_attachment], &[subpass], &[])
     };
 
-    let extent = d::Extent {
+    let extent = i::Extent {
         width: pixel_width as _,
         height: pixel_height as _,
         depth: 1,
@@ -286,7 +289,7 @@ fn main() {
         .iter()
         .map(|&(_, ref rtv)| {
             device
-                .create_framebuffer(&ocean_pass, &[rtv, &depth_view], extent)
+                .create_framebuffer(&ocean_pass, vec![rtv, &depth_view], extent)
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -385,7 +388,7 @@ fn main() {
     };
 
     let sampler = device.create_sampler(i::SamplerInfo::new(
-        i::FilterMethod::Bilinear,
+        i::Filter::Linear,
         i::WrapMode::Tile,
     ));
 
@@ -407,7 +410,7 @@ fn main() {
         ],
     );
 
-    let desc_sets = desc_pool.allocate_sets(&[&set_layout]);
+    let desc_sets = desc_pool.allocate_sets(Some(&set_layout));
 
     let (locals_buffer, locals_memory) = {
         let buffer_stride = std::mem::size_of::<Locals>() as u64;
@@ -704,16 +707,16 @@ fn main() {
         (locals_buffer, buffer_memory)
     };
 
-    let viewport = Viewport {
-        rect: Rect {
+    let viewport = pso::Viewport {
+        rect: pso::Rect {
             x: 0,
             y: 0,
             w: pixel_width,
             h: pixel_height,
         },
-        depth: (0.0..1.0),
+        depth: 0.0..1.0,
     };
-    let scissor = Rect {
+    let scissor = pso::Rect {
         x: 0,
         y: 0,
         w: pixel_width,
@@ -828,11 +831,12 @@ fn main() {
     let kind = i::Kind::D2(
         RESOLUTION as i::Size,
         RESOLUTION as i::Size,
-        i::AaMode::Single,
+        1,
+        1,
     );
     let img_format = Format::Rgba32Float;
     let image_unbound = device
-        .create_image(kind, 1, img_format, i::Usage::SAMPLED | i::Usage::STORAGE)
+        .create_image(kind, 1, img_format, i::Tiling::Optimal, i::Usage::SAMPLED | i::Usage::STORAGE, i::StorageFlags::empty())
         .unwrap(); // TODO: usage
     let image_req = device.get_image_requirements(&image_unbound);
 
@@ -851,10 +855,10 @@ fn main() {
         .bind_image_memory(&image_memory, 0, image_unbound)
         .unwrap();
     let displacement_uav = device
-        .create_image_view(&displacement_map, img_format, Swizzle::NO, COLOR_RANGE)
+        .create_image_view(&displacement_map, i::ViewKind::D2, img_format, Swizzle::NO, COLOR_RANGE)
         .unwrap();
     let displacement_srv = device
-        .create_image_view(&displacement_map, img_format, Swizzle::NO, COLOR_RANGE)
+        .create_image_view(&displacement_map, i::ViewKind::D2, img_format, Swizzle::NO, COLOR_RANGE)
         .unwrap();
 
     // Upload data
@@ -863,16 +867,17 @@ fn main() {
             let mut cmd_buffer = general_pool.acquire_command_buffer(false);
 
             let image_barrier = m::Barrier::Image {
-                states: (i::Access::empty(), i::ImageLayout::Undefined)
+                states: (i::Access::empty(), i::Layout::Undefined)
                     ..(
                         i::Access::SHADER_READ | i::Access::SHADER_WRITE,
-                        i::ImageLayout::General,
+                        i::Layout::General,
                     ),
                 target: &displacement_map,
                 range: COLOR_RANGE,
             };
             cmd_buffer.pipeline_barrier(
                 pso::PipelineStage::TOP_OF_PIPE..pso::PipelineStage::COMPUTE_SHADER,
+                m::Dependencies::empty(),
                 &[image_barrier],
             );
 
@@ -906,135 +911,120 @@ fn main() {
         let submission = Submission::new().submit(Some(submit));
         queue.submit(submission, Some(&mut frame_fence));
 
-        device.wait_for_fences(&[&frame_fence], d::WaitFor::All, !0);
+        device.wait_for_fence(&frame_fence, !0);
     }
 
-    device.update_descriptor_sets(&[
+    device.write_descriptor_sets(vec![
         pso::DescriptorSetWrite {
             set: &desc_sets[0],
             binding: 0,
             array_offset: 0,
-            write: pso::DescriptorWrite::UniformBuffer(vec![
-                (&locals_buffer, 0..std::mem::size_of::<Locals>() as u64),
-            ]),
+            descriptors: Some(pso::Descriptor::Buffer(&locals_buffer, None..None)),
         },
         pso::DescriptorSetWrite {
             set: &desc_sets[0],
             binding: 1,
             array_offset: 0,
-            write: pso::DescriptorWrite::SampledImage(vec![
-                (&displacement_srv, i::ImageLayout::General),
-            ]),
+            descriptors: Some(pso::Descriptor::Image(&displacement_srv, i::Layout::General)),
         },
         pso::DescriptorSetWrite {
             set: &desc_sets[0],
             binding: 2,
             array_offset: 0,
-            write: pso::DescriptorWrite::Sampler(vec![&sampler]),
+            descriptors: Some(pso::Descriptor::Sampler(&sampler)),
         },
         pso::DescriptorSetWrite {
             set: &propagate.desc_sets[0],
             binding: 0,
             array_offset: 0,
-            write: pso::DescriptorWrite::UniformBuffer(vec![
-                (
-                    &propagate_locals_buffer,
-                    0..std::mem::size_of::<PropagateLocals>() as u64,
-                ),
-            ]),
+            descriptors: Some(pso::Descriptor::Buffer(&propagate_locals_buffer, None..None)),
         },
         pso::DescriptorSetWrite {
             set: &propagate.desc_sets[0],
             binding: 1,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageBuffer(vec![
-                (&initial_spec, 0..spectrum_len as u64),
-            ]),
+            descriptors: Some(pso::Descriptor::Buffer(&initial_spec, None..Some(spectrum_len as u64))),
         },
         pso::DescriptorSetWrite {
             set: &propagate.desc_sets[0],
             binding: 2,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageBuffer(vec![(&omega_buffer, 0..omega_len as u64)]),
+            descriptors: Some(pso::Descriptor::Buffer(&omega_buffer, None..Some(omega_len as u64))),
         },
         pso::DescriptorSetWrite {
             set: &propagate.desc_sets[0],
             binding: 3,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageBuffer(vec![(&dy_spec, 0..spectrum_len as u64)]),
+            descriptors: Some(pso::Descriptor::Buffer(&dy_spec, None..Some(spectrum_len as u64))),
         },
         pso::DescriptorSetWrite {
             set: &propagate.desc_sets[0],
             binding: 4,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageBuffer(vec![(&dx_spec, 0..spectrum_len as u64)]),
+            descriptors: Some(pso::Descriptor::Buffer(&dx_spec, None..Some(spectrum_len as u64))),
         },
         pso::DescriptorSetWrite {
             set: &propagate.desc_sets[0],
             binding: 5,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageBuffer(vec![(&dz_spec, 0..spectrum_len as u64)]),
+            descriptors: Some(pso::Descriptor::Buffer(&dz_spec, None..Some(spectrum_len as u64))),
         },
     ]);
 
-    device.update_descriptor_sets(&[
+    device.write_descriptor_sets(vec![
         pso::DescriptorSetWrite {
             set: &correction.desc_sets[0],
             binding: 0,
             array_offset: 0,
-            write: pso::DescriptorWrite::UniformBuffer(vec![
-                (
-                    &correct_locals_buffer,
-                    0..std::mem::size_of::<CorrectionLocals>() as u64,
-                ),
-            ]),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &correct_locals_buffer,
+                None..None,
+            )),
         },
         pso::DescriptorSetWrite {
             set: &correction.desc_sets[0],
             binding: 1,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageBuffer(vec![(&dy_spec, 0..spectrum_len as u64)]),
+            descriptors: Some(pso::Descriptor::Buffer(&dy_spec, None..Some(spectrum_len as u64))),
         },
         pso::DescriptorSetWrite {
             set: &correction.desc_sets[0],
             binding: 2,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageBuffer(vec![(&dx_spec, 0..spectrum_len as u64)]),
+            descriptors: Some(pso::Descriptor::Buffer(&dx_spec, None..Some(spectrum_len as u64))),
         },
         pso::DescriptorSetWrite {
             set: &correction.desc_sets[0],
             binding: 3,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageBuffer(vec![(&dz_spec, 0..spectrum_len as u64)]),
+            descriptors: Some(pso::Descriptor::Buffer(&dz_spec, None..Some(spectrum_len as u64))),
         },
         pso::DescriptorSetWrite {
             set: &correction.desc_sets[0],
             binding: 4,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageImage(vec![
-                (&displacement_uav, i::ImageLayout::General),
-            ]),
+            descriptors: Some(pso::Descriptor::Image(&displacement_uav, i::Layout::General)),
         },
     ]);
 
-    device.update_descriptor_sets(&[
+    device.write_descriptor_sets(vec![
         pso::DescriptorSetWrite {
             set: &fft.desc_sets[0],
             binding: 0,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageBuffer(vec![(&dx_spec, 0..spectrum_len as u64)]),
+            descriptors: Some(pso::Descriptor::Buffer(&dx_spec, None..Some(spectrum_len as u64))),
         },
         pso::DescriptorSetWrite {
             set: &fft.desc_sets[1],
             binding: 0,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageBuffer(vec![(&dy_spec, 0..spectrum_len as u64)]),
+            descriptors: Some(pso::Descriptor::Buffer(&dy_spec, None..Some(spectrum_len as u64))),
         },
         pso::DescriptorSetWrite {
             set: &fft.desc_sets[2],
             binding: 0,
             array_offset: 0,
-            write: pso::DescriptorWrite::StorageBuffer(vec![(&dz_spec, 0..spectrum_len as u64)]),
+            descriptors: Some(pso::Descriptor::Buffer(&dz_spec, None..Some(spectrum_len as u64))),
         },
     ]);
 
@@ -1077,7 +1067,7 @@ fn main() {
             time_start.to(time_now).num_microseconds().unwrap() as f32 / 1_000_000.0;
         time_last = time_now;
 
-        device.reset_fences(&[&frame_fence]);
+        device.reset_fence(&frame_fence);
         general_pool.reset();
         let frame = swap_chain.acquire_frame(FrameSync::Semaphore(&mut frame_semaphore));
 
@@ -1119,7 +1109,7 @@ fn main() {
                 0,
                 &propagate.desc_sets[0..1],
             );
-            cmd_buffer.dispatch(RESOLUTION as u32, RESOLUTION as u32, 1);
+            cmd_buffer.dispatch([RESOLUTION as u32, RESOLUTION as u32, 1]);
 
             let dx_barrier = m::Barrier::Buffer {
                 states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
@@ -1135,16 +1125,17 @@ fn main() {
             };
             cmd_buffer.pipeline_barrier(
                 pso::PipelineStage::COMPUTE_SHADER..pso::PipelineStage::COMPUTE_SHADER,
+                m::Dependencies::empty(),
                 &[dx_barrier, dy_barrier, dz_barrier],
             );
 
             cmd_buffer.bind_compute_pipeline(&fft.row_pass);
             cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[0..1]);
-            cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
+            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
             cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[1..2]);
-            cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
+            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
             cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[2..3]);
-            cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
+            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
 
             let dx_barrier = m::Barrier::Buffer {
                 states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
@@ -1163,16 +1154,17 @@ fn main() {
             };
             cmd_buffer.pipeline_barrier(
                 pso::PipelineStage::COMPUTE_SHADER..pso::PipelineStage::COMPUTE_SHADER,
+                m::Dependencies::empty(),
                 &[dx_barrier, dy_barrier, dz_barrier],
             );
 
             cmd_buffer.bind_compute_pipeline(&fft.col_pass);
             cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[0..1]);
-            cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
+            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
             cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[1..2]);
-            cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
+            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
             cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[2..3]);
-            cmd_buffer.dispatch(1, RESOLUTION as u32, 1);
+            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
 
             let dx_barrier = m::Barrier::Buffer {
                 states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
@@ -1192,11 +1184,11 @@ fn main() {
             let image_barrier = m::Barrier::Image {
                 states: (
                     i::Access::SHADER_READ | i::Access::SHADER_WRITE,
-                    i::ImageLayout::General,
+                    i::Layout::General,
                 )
                     ..(
                         i::Access::SHADER_READ | i::Access::SHADER_WRITE,
-                        i::ImageLayout::General,
+                        i::Layout::General,
                     ),
                 target: &displacement_map,
                 range: COLOR_RANGE,
@@ -1204,6 +1196,7 @@ fn main() {
             cmd_buffer.pipeline_barrier(
                 pso::PipelineStage::VERTEX_SHADER | pso::PipelineStage::COMPUTE_SHADER
                     ..pso::PipelineStage::COMPUTE_SHADER,
+                m::Dependencies::empty(),
                 &[dx_barrier, dy_barrier, dz_barrier, image_barrier],
             );
 
@@ -1213,22 +1206,23 @@ fn main() {
                 0,
                 &correction.desc_sets[0..1],
             );
-            cmd_buffer.dispatch(RESOLUTION as u32, RESOLUTION as u32, 1);
+            cmd_buffer.dispatch([RESOLUTION as u32, RESOLUTION as u32, 1]);
 
             let image_barrier = m::Barrier::Image {
                 states: (
                     i::Access::SHADER_READ | i::Access::SHADER_WRITE,
-                    i::ImageLayout::General,
+                    i::Layout::General,
                 )
                     ..(
                         i::Access::SHADER_READ | i::Access::SHADER_WRITE,
-                        i::ImageLayout::General,
+                        i::Layout::General,
                     ),
                 target: &displacement_map,
                 range: COLOR_RANGE,
             };
             cmd_buffer.pipeline_barrier(
                 pso::PipelineStage::COMPUTE_SHADER..pso::PipelineStage::VERTEX_SHADER|pso::PipelineStage::FRAGMENT_SHADER,
+                m::Dependencies::empty(),
                 &[image_barrier],
             );
 
@@ -1247,10 +1241,10 @@ fn main() {
             });
 
             {
-                let mut encoder = cmd_buffer.begin_renderpass_inline(
+                let mut encoder = cmd_buffer.begin_render_pass_inline(
                     &ocean_pass,
                     &ocean_framebuffers[frame.id()],
-                    Rect {
+                    pso::Rect {
                         x: 0,
                         y: 0,
                         w: pixel_width,
@@ -1269,11 +1263,11 @@ fn main() {
         };
 
         let submission = Submission::new()
-            .wait_on(&[(&mut frame_semaphore, pso::PipelineStage::BOTTOM_OF_PIPE)])
+            .wait_on(&[(&frame_semaphore, pso::PipelineStage::BOTTOM_OF_PIPE)])
             .submit(Some(submit));
         queue.submit(submission, Some(&mut frame_fence));
 
-        device.wait_for_fences(&[&frame_fence], d::WaitFor::All, !0);
+        device.wait_for_fence(&frame_fence, !0);
         swap_chain.present(&mut queue, &[]);
 
         #[cfg(feature = "metal")]
@@ -1323,7 +1317,7 @@ fn main() {
         device.destroy_framebuffer(framebuffer);
     }
 
-    for (image, rtv) in frame_images {
+    for (_, rtv) in frame_images {
         device.destroy_image_view(rtv);
     }
 
