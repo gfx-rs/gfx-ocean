@@ -143,7 +143,9 @@ fn main() {
         device.create_command_pool_typed(&queue_group, pool::CommandPoolCreateFlags::empty(), 4);
     let mut queue = &mut queue_group.queues[0];
 
-    let swap_config = SwapchainConfig::new().with_color(surface_format);
+    let swap_config = SwapchainConfig::new()
+        .with_color(surface_format)
+        .with_image_usage(i::Usage::COLOR_ATTACHMENT);
 
     let (mut swap_chain, backbuffer) = device.create_swapchain(&mut surface, swap_config);
 
