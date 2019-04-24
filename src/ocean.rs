@@ -20,10 +20,13 @@ pub struct Propagation {
 impl Propagation {
     pub fn init(device: &mut <B as Backend>::Device) -> Self {
         let cs_propagate = device
-            .create_shader_module(&::translate_shader(
-                include_str!("../shader/propagate.comp"),
-                pso::Stage::Compute,
-            ).unwrap())
+            .create_shader_module(
+                &::translate_shader(
+                    include_str!("../shader/propagate.comp"),
+                    pso::Stage::Compute,
+                )
+                .unwrap(),
+            )
             .unwrap();
 
         let set_layout = device.create_descriptor_set_layout(&[
@@ -82,16 +85,14 @@ impl Propagation {
         let desc_sets = pool.allocate_sets(Some(&set_layout));
         let layout = device.create_pipeline_layout(Some(&set_layout), &[]);
         let pipeline = {
-            let mut pipelines = device.create_compute_pipelines(&[
-                pso::ComputePipelineDesc::new(
-                    pso::EntryPoint {
-                        entry: "main",
-                        module: &cs_propagate,
-                        specialization: &[],
-                    },
-                    &layout,
-                ),
-            ]);
+            let mut pipelines = device.create_compute_pipelines(&[pso::ComputePipelineDesc::new(
+                pso::EntryPoint {
+                    entry: "main",
+                    module: &cs_propagate,
+                    specialization: &[],
+                },
+                &layout,
+            )]);
 
             pipelines.remove(0).unwrap()
         };
@@ -131,10 +132,13 @@ pub struct Correction {
 impl Correction {
     pub fn init(device: &mut <B as Backend>::Device) -> Self {
         let cs_correct = device
-            .create_shader_module(&::translate_shader(
-                include_str!("../shader/correction.comp"),
-                pso::Stage::Compute,
-            ).unwrap())
+            .create_shader_module(
+                &::translate_shader(
+                    include_str!("../shader/correction.comp"),
+                    pso::Stage::Compute,
+                )
+                .unwrap(),
+            )
             .unwrap();
 
         let set_layout = device.create_descriptor_set_layout(&[
@@ -191,16 +195,14 @@ impl Correction {
         let desc_sets = pool.allocate_sets(Some(&set_layout));
         let layout = device.create_pipeline_layout(Some(&set_layout), &[]);
         let pipeline = {
-            let mut pipelines = device.create_compute_pipelines(&[
-                pso::ComputePipelineDesc::new(
-                    pso::EntryPoint {
-                        entry: "main",
-                        module: &cs_correct,
-                        specialization: &[],
-                    },
-                    &layout,
-                ),
-            ]);
+            let mut pipelines = device.create_compute_pipelines(&[pso::ComputePipelineDesc::new(
+                pso::EntryPoint {
+                    entry: "main",
+                    module: &cs_correct,
+                    specialization: &[],
+                },
+                &layout,
+            )]);
 
             pipelines.remove(0).unwrap()
         };
