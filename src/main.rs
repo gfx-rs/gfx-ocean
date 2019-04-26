@@ -1,14 +1,16 @@
-#![cfg_attr(not(any(feature = "vulkan", feature = "dx12", feature = "metal")),
-            allow(dead_code, unused_extern_crates, unused_imports))]
+#![cfg_attr(
+    not(any(feature = "vulkan", feature = "dx12", feature = "metal")),
+    allow(dead_code, unused_extern_crates, unused_imports)
+)]
 
 extern crate cgmath;
 extern crate env_logger;
 #[cfg(feature = "dx12")]
 extern crate gfx_backend_dx12 as back;
-#[cfg(feature = "vulkan")]
-extern crate gfx_backend_vulkan as back;
 #[cfg(feature = "metal")]
 extern crate gfx_backend_metal as back;
+#[cfg(feature = "vulkan")]
+extern crate gfx_backend_vulkan as back;
 extern crate gfx_hal as hal;
 extern crate glsl_to_spirv;
 extern crate panopaea;
@@ -18,11 +20,13 @@ extern crate winit;
 use std::fs;
 use std::io::Read;
 
-use hal::{buffer as b, command, format as f, image as i, memory as m, pass, pool, pso};
-use hal::{Backbuffer, DescriptorPool, Device, FrameSync, IndexType, Instance, PhysicalDevice,
-          Primitive, Submission, Surface, Swapchain, SwapchainConfig};
 use hal::command::{ClearColor, ClearDepthStencil, ClearValue};
 use hal::format::{ChannelType, Format, Swizzle};
+use hal::{buffer as b, command, format as f, image as i, memory as m, pass, pool, pso};
+use hal::{
+    Backbuffer, DescriptorPool, Device, FrameSync, IndexType, Instance, PhysicalDevice, Primitive,
+    Submission, Surface, Swapchain, SwapchainConfig,
+};
 
 use panopaea::ocean::empirical;
 
@@ -122,17 +126,12 @@ fn main() {
     let surface_format = surface
         .capabilities_and_formats(&adapter.physical_device)
         .1
-        .map_or(
-            f::Format::Rgba8Srgb,
-            |formats| {
-                formats
-                    .into_iter()
-                    .find(|format| {
-                        format.base_format().1 == ChannelType::Srgb
-                    })
-                    .unwrap()
-            }
-        );
+        .map_or(f::Format::Rgba8Srgb, |formats| {
+            formats
+                .into_iter()
+                .find(|format| format.base_format().1 == ChannelType::Srgb)
+                .unwrap()
+        });
     let memory_types = adapter.physical_device.memory_properties().memory_types;
 
     let (mut device, mut queue_group) = adapter
@@ -154,7 +153,13 @@ fn main() {
             .into_iter()
             .map(|image| {
                 let rtv = device
-                    .create_image_view(&image, i::ViewKind::D2, surface_format, Swizzle::NO, COLOR_RANGE)
+                    .create_image_view(
+                        &image,
+                        i::ViewKind::D2,
+                        surface_format,
+                        Swizzle::NO,
+                        COLOR_RANGE,
+                    )
                     .unwrap();
                 (image, rtv)
             })
@@ -166,14 +171,16 @@ fn main() {
     let mut frame_fence = device.create_fence(false);
 
     let depth_format = f::Format::D32Float;
-    let depth_image = device.create_image(
-        i::Kind::D2(pixel_width as _, pixel_height as _, 1, 1),
-        1,
-        depth_format,
-        i::Tiling::Optimal,
-        i::Usage::DEPTH_STENCIL_ATTACHMENT,
-        i::StorageFlags::empty(),
-    ).unwrap();
+    let depth_image = device
+        .create_image(
+            i::Kind::D2(pixel_width as _, pixel_height as _, 1, 1),
+            1,
+            depth_format,
+            i::Tiling::Optimal,
+            i::Usage::DEPTH_STENCIL_ATTACHMENT,
+            i::StorageFlags::empty(),
+        )
+        .unwrap();
 
     let depth_mem_reqs = device.get_image_requirements(&depth_image);
 
@@ -181,26 +188,32 @@ fn main() {
         .iter()
         .enumerate()
         .position(|(id, mem_type)| {
-            depth_mem_reqs.type_mask & (1 << id) != 0 &&
-            mem_type.properties.contains(m::Properties::DEVICE_LOCAL)
+            depth_mem_reqs.type_mask & (1 << id) != 0
+                && mem_type.properties.contains(m::Properties::DEVICE_LOCAL)
         })
         .unwrap()
         .into();
 
-    let depth_memory = device.allocate_memory(mem_type, depth_mem_reqs.size).unwrap();
-    let depth_image = device.bind_image_memory(&depth_memory, 0, depth_image).unwrap();
+    let depth_memory = device
+        .allocate_memory(mem_type, depth_mem_reqs.size)
+        .unwrap();
+    let depth_image = device
+        .bind_image_memory(&depth_memory, 0, depth_image)
+        .unwrap();
 
-    let depth_view = device.create_image_view(
-        &depth_image,
-        i::ViewKind::D2,
-        depth_format,
-        f::Swizzle::NO,
-        i::SubresourceRange {
-           aspects: f::Aspects::DEPTH,
-           levels: 0 .. 1,
-           layers: 0 .. 1,
-       },
-    ).unwrap();
+    let depth_view = device
+        .create_image_view(
+            &depth_image,
+            i::ViewKind::D2,
+            depth_format,
+            f::Swizzle::NO,
+            i::SubresourceRange {
+                aspects: f::Aspects::DEPTH,
+                levels: 0..1,
+                layers: 0..1,
+            },
+        )
+        .unwrap();
 
     let vs_ocean = {
         let mut file = fs::File::open("shader/ocean.vert").unwrap();
@@ -208,11 +221,8 @@ fn main() {
         file.read_to_string(&mut shader);
 
         device
-        .create_shader_module(&translate_shader(
-            &shader,
-            pso::Stage::Vertex,
-        ).unwrap())
-        .unwrap()
+            .create_shader_module(&translate_shader(&shader, pso::Stage::Vertex).unwrap())
+            .unwrap()
     };
 
     let fs_ocean = {
@@ -221,11 +231,8 @@ fn main() {
         file.read_to_string(&mut shader);
 
         device
-        .create_shader_module(&translate_shader(
-            &shader,
-            pso::Stage::Fragment,
-        ).unwrap())
-        .unwrap()
+            .create_shader_module(&translate_shader(&shader, pso::Stage::Fragment).unwrap())
+            .unwrap()
     };
 
     let fft = fft::Fft::init(&mut device);
@@ -267,9 +274,12 @@ fn main() {
 
         let depth_attachment = pass::Attachment {
             format: Some(depth_format),
-            ops: pass::AttachmentOps::new(pass::AttachmentLoadOp::Clear, pass::AttachmentStoreOp::DontCare),
+            ops: pass::AttachmentOps::new(
+                pass::AttachmentLoadOp::Clear,
+                pass::AttachmentStoreOp::DontCare,
+            ),
             stencil_ops: pass::AttachmentOps::DONT_CARE,
-            layouts: i::Layout::Undefined .. i::Layout::DepthStencilAttachmentOptimal,
+            layouts: i::Layout::Undefined..i::Layout::DepthStencilAttachmentOptimal,
         };
 
         let subpass = pass::SubpassDesc {
@@ -338,16 +348,14 @@ fn main() {
             subpass,
         );
 
-        ocean_pipe_desc.depth_stencil = Some(
-            pso::DepthStencilDesc {
-                depth: pso::DepthTest::On {
-                    fun: pso::Comparison::LessEqual,
-                    write: true,
-                },
-                depth_bounds: false,
-                stencil: pso::StencilTest::Off,
-            }
-        );
+        ocean_pipe_desc.depth_stencil = Some(pso::DepthStencilDesc {
+            depth: pso::DepthTest::On {
+                fun: pso::Comparison::LessEqual,
+                write: true,
+            },
+            depth_bounds: false,
+            stencil: pso::StencilTest::Off,
+        });
         ocean_pipe_desc.rasterizer.depth_clamping = false;
         ocean_pipe_desc.blender.targets.push(pso::ColorBlendDesc(
             pso::ColorMask::ALL,
@@ -389,10 +397,7 @@ fn main() {
         device.create_graphics_pipelines(&[ocean_pipe_desc])
     };
 
-    let sampler = device.create_sampler(i::SamplerInfo::new(
-        i::Filter::Linear,
-        i::WrapMode::Tile,
-    ));
+    let sampler = device.create_sampler(i::SamplerInfo::new(i::Filter::Linear, i::WrapMode::Tile));
 
     let mut desc_pool = device.create_descriptor_pool(
         1, // sets
@@ -830,15 +835,17 @@ fn main() {
         (staging_buffer, buffer_memory)
     };
 
-    let kind = i::Kind::D2(
-        RESOLUTION as i::Size,
-        RESOLUTION as i::Size,
-        1,
-        1,
-    );
+    let kind = i::Kind::D2(RESOLUTION as i::Size, RESOLUTION as i::Size, 1, 1);
     let img_format = Format::Rgba32Float;
     let image_unbound = device
-        .create_image(kind, 1, img_format, i::Tiling::Optimal, i::Usage::SAMPLED | i::Usage::STORAGE, i::StorageFlags::empty())
+        .create_image(
+            kind,
+            1,
+            img_format,
+            i::Tiling::Optimal,
+            i::Usage::SAMPLED | i::Usage::STORAGE,
+            i::StorageFlags::empty(),
+        )
         .unwrap(); // TODO: usage
     let image_req = device.get_image_requirements(&image_unbound);
 
@@ -857,10 +864,22 @@ fn main() {
         .bind_image_memory(&image_memory, 0, image_unbound)
         .unwrap();
     let displacement_uav = device
-        .create_image_view(&displacement_map, i::ViewKind::D2, img_format, Swizzle::NO, COLOR_RANGE)
+        .create_image_view(
+            &displacement_map,
+            i::ViewKind::D2,
+            img_format,
+            Swizzle::NO,
+            COLOR_RANGE,
+        )
         .unwrap();
     let displacement_srv = device
-        .create_image_view(&displacement_map, i::ViewKind::D2, img_format, Swizzle::NO, COLOR_RANGE)
+        .create_image_view(
+            &displacement_map,
+            i::ViewKind::D2,
+            img_format,
+            Swizzle::NO,
+            COLOR_RANGE,
+        )
         .unwrap();
 
     // Upload data
@@ -887,25 +906,21 @@ fn main() {
             cmd_buffer.copy_buffer(
                 &spec_staging_buffer,
                 &initial_spec,
-                &[
-                    command::BufferCopy {
-                        src: 0,
-                        dst: 0,
-                        size: (RESOLUTION * RESOLUTION * 2 * std::mem::size_of::<f32>()) as u64,
-                    },
-                ],
+                &[command::BufferCopy {
+                    src: 0,
+                    dst: 0,
+                    size: (RESOLUTION * RESOLUTION * 2 * std::mem::size_of::<f32>()) as u64,
+                }],
             );
 
             cmd_buffer.copy_buffer(
                 &omega_staging_buffer,
                 &omega_buffer,
-                &[
-                    command::BufferCopy {
-                        src: 0,
-                        dst: 0,
-                        size: (RESOLUTION * RESOLUTION * std::mem::size_of::<f32>()) as u64,
-                    },
-                ],
+                &[command::BufferCopy {
+                    src: 0,
+                    dst: 0,
+                    size: (RESOLUTION * RESOLUTION * std::mem::size_of::<f32>()) as u64,
+                }],
             );
             cmd_buffer.finish()
         };
@@ -927,7 +942,10 @@ fn main() {
             set: &desc_sets[0],
             binding: 1,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Image(&displacement_srv, i::Layout::General)),
+            descriptors: Some(pso::Descriptor::Image(
+                &displacement_srv,
+                i::Layout::General,
+            )),
         },
         pso::DescriptorSetWrite {
             set: &desc_sets[0],
@@ -939,37 +957,55 @@ fn main() {
             set: &propagate.desc_sets[0],
             binding: 0,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&propagate_locals_buffer, None..None)),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &propagate_locals_buffer,
+                None..None,
+            )),
         },
         pso::DescriptorSetWrite {
             set: &propagate.desc_sets[0],
             binding: 1,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&initial_spec, None..Some(spectrum_len as u64))),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &initial_spec,
+                None..Some(spectrum_len as u64),
+            )),
         },
         pso::DescriptorSetWrite {
             set: &propagate.desc_sets[0],
             binding: 2,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&omega_buffer, None..Some(omega_len as u64))),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &omega_buffer,
+                None..Some(omega_len as u64),
+            )),
         },
         pso::DescriptorSetWrite {
             set: &propagate.desc_sets[0],
             binding: 3,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&dy_spec, None..Some(spectrum_len as u64))),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &dy_spec,
+                None..Some(spectrum_len as u64),
+            )),
         },
         pso::DescriptorSetWrite {
             set: &propagate.desc_sets[0],
             binding: 4,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&dx_spec, None..Some(spectrum_len as u64))),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &dx_spec,
+                None..Some(spectrum_len as u64),
+            )),
         },
         pso::DescriptorSetWrite {
             set: &propagate.desc_sets[0],
             binding: 5,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&dz_spec, None..Some(spectrum_len as u64))),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &dz_spec,
+                None..Some(spectrum_len as u64),
+            )),
         },
     ]);
 
@@ -978,34 +1014,43 @@ fn main() {
             set: &correction.desc_sets[0],
             binding: 0,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(
-                &correct_locals_buffer,
-                None..None,
-            )),
+            descriptors: Some(pso::Descriptor::Buffer(&correct_locals_buffer, None..None)),
         },
         pso::DescriptorSetWrite {
             set: &correction.desc_sets[0],
             binding: 1,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&dy_spec, None..Some(spectrum_len as u64))),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &dy_spec,
+                None..Some(spectrum_len as u64),
+            )),
         },
         pso::DescriptorSetWrite {
             set: &correction.desc_sets[0],
             binding: 2,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&dx_spec, None..Some(spectrum_len as u64))),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &dx_spec,
+                None..Some(spectrum_len as u64),
+            )),
         },
         pso::DescriptorSetWrite {
             set: &correction.desc_sets[0],
             binding: 3,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&dz_spec, None..Some(spectrum_len as u64))),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &dz_spec,
+                None..Some(spectrum_len as u64),
+            )),
         },
         pso::DescriptorSetWrite {
             set: &correction.desc_sets[0],
             binding: 4,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Image(&displacement_uav, i::Layout::General)),
+            descriptors: Some(pso::Descriptor::Image(
+                &displacement_uav,
+                i::Layout::General,
+            )),
         },
     ]);
 
@@ -1014,19 +1059,28 @@ fn main() {
             set: &fft.desc_sets[0],
             binding: 0,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&dx_spec, None..Some(spectrum_len as u64))),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &dx_spec,
+                None..Some(spectrum_len as u64),
+            )),
         },
         pso::DescriptorSetWrite {
             set: &fft.desc_sets[1],
             binding: 0,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&dy_spec, None..Some(spectrum_len as u64))),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &dy_spec,
+                None..Some(spectrum_len as u64),
+            )),
         },
         pso::DescriptorSetWrite {
             set: &fft.desc_sets[2],
             binding: 0,
             array_offset: 0,
-            descriptors: Some(pso::Descriptor::Buffer(&dz_spec, None..Some(spectrum_len as u64))),
+            descriptors: Some(pso::Descriptor::Buffer(
+                &dz_spec,
+                None..Some(spectrum_len as u64),
+            )),
         },
     ]);
 
@@ -1035,31 +1089,29 @@ fn main() {
 
     let mut running = true;
     while running {
-        events_loop.poll_events(|event| {
-            match event {
-                winit::Event::WindowEvent { event, .. } => {
-                    match event {
-                        winit::WindowEvent::KeyboardInput {
-                            input:
-                                winit::KeyboardInput {
-                                    virtual_keycode: Some(winit::VirtualKeyCode::Escape),
-                                    ..
-                                },
+        events_loop.poll_events(|event| match event {
+            winit::Event::WindowEvent { event, .. } => match event {
+                winit::WindowEvent::KeyboardInput {
+                    input:
+                        winit::KeyboardInput {
+                            virtual_keycode: Some(winit::VirtualKeyCode::Escape),
                             ..
-                        }
-                        | winit::WindowEvent::Closed => running = false,
-                        winit::WindowEvent::KeyboardInput { input, .. } => {
-                            camera.on_keyboard(input);
-                        }
-                        _ => (),
-                    }
+                        },
+                    ..
                 }
-                winit::Event::DeviceEvent {
-                    event: winit::DeviceEvent::MouseMotion { delta }, .. } => {
-                        camera.on_mouse(delta);
+                | winit::WindowEvent::Closed => running = false,
+                winit::WindowEvent::KeyboardInput { input, .. } => {
+                    camera.on_keyboard(input);
                 }
                 _ => (),
+            },
+            winit::Event::DeviceEvent {
+                event: winit::DeviceEvent::MouseMotion { delta },
+                ..
+            } => {
+                camera.on_mouse(delta);
             }
+            _ => (),
         });
 
         let time_now = time::PreciseTime::now();
@@ -1223,7 +1275,8 @@ fn main() {
                 range: COLOR_RANGE,
             };
             cmd_buffer.pipeline_barrier(
-                pso::PipelineStage::COMPUTE_SHADER..pso::PipelineStage::VERTEX_SHADER|pso::PipelineStage::FRAGMENT_SHADER,
+                pso::PipelineStage::COMPUTE_SHADER
+                    ..pso::PipelineStage::VERTEX_SHADER | pso::PipelineStage::FRAGMENT_SHADER,
                 m::Dependencies::empty(),
                 &[image_barrier],
             );

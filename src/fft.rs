@@ -15,35 +15,31 @@ pub struct Fft {
 impl Fft {
     pub fn init(device: &mut <B as Backend>::Device) -> Self {
         let cs_fft_row = device
-            .create_shader_module(&::translate_shader(
-                include_str!("../shader/fft_row.comp"),
-                pso::Stage::Compute,
-            ).unwrap())
+            .create_shader_module(
+                &::translate_shader(include_str!("../shader/fft_row.comp"), pso::Stage::Compute)
+                    .unwrap(),
+            )
             .unwrap();
         let cs_fft_col = device
-            .create_shader_module(&::translate_shader(
-                include_str!("../shader/fft_col.comp"),
-                pso::Stage::Compute,
-            ).unwrap())
+            .create_shader_module(
+                &::translate_shader(include_str!("../shader/fft_col.comp"), pso::Stage::Compute)
+                    .unwrap(),
+            )
             .unwrap();
 
-        let set_layout = device.create_descriptor_set_layout(&[
-            pso::DescriptorSetLayoutBinding {
-                binding: 0,
-                ty: pso::DescriptorType::StorageBuffer,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
-            },
-        ]);
+        let set_layout = device.create_descriptor_set_layout(&[pso::DescriptorSetLayoutBinding {
+            binding: 0,
+            ty: pso::DescriptorType::StorageBuffer,
+            count: 1,
+            stage_flags: pso::ShaderStageFlags::COMPUTE,
+        }]);
 
         let mut pool = device.create_descriptor_pool(
             3,
-            &[
-                pso::DescriptorRangeDesc {
-                    ty: pso::DescriptorType::StorageBuffer,
-                    count: 3,
-                },
-            ],
+            &[pso::DescriptorRangeDesc {
+                ty: pso::DescriptorType::StorageBuffer,
+                count: 3,
+            }],
         );
 
         let desc_sets = pool.allocate_sets(vec![&set_layout, &set_layout, &set_layout]);

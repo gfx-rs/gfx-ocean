@@ -1,6 +1,6 @@
-use winit::{self, ElementState, VirtualKeyCode};
 use cgmath;
 use cgmath::*;
+use winit::{self, ElementState, VirtualKeyCode};
 
 pub struct Camera {
     pos: cgmath::Point3<f32>,
@@ -60,7 +60,7 @@ impl Camera {
         }
     }
 
-    pub fn on_mouse(&mut self, delta: (f64, f64)){
+    pub fn on_mouse(&mut self, delta: (f64, f64)) {
         let view_rot_speed = cgmath::Rad(0.01f32);
         let dx = delta.0 as f32;
         let dy = delta.1 as f32;
