@@ -1,6 +1,6 @@
+use crate::winit::{self, ElementState, VirtualKeyCode};
 use cgmath;
 use cgmath::*;
-use winit::{self, ElementState, VirtualKeyCode};
 
 pub struct Camera {
     pos: cgmath::Point3<f32>,

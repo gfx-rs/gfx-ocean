@@ -1,5 +1,5 @@
+use crate::hal::{pso, Backend, DescriptorPool, Device};
 use back::Backend as B;
-use hal::{pso, Backend, DescriptorPool, Device};
 
 pub struct Fft {
     pub cs_fft_row: <B as Backend>::ShaderModule,

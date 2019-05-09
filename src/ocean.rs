@@ -1,5 +1,5 @@
+use crate::hal::{pso, Backend, DescriptorPool, Device};
 use back::Backend as B;
-use hal::{pso, Backend, DescriptorPool, Device};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PropagateLocals {

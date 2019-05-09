@@ -20,10 +20,10 @@ extern crate winit;
 use std::fs;
 use std::io::Read;
 
-use hal::command::{ClearColor, ClearDepthStencil, ClearValue};
-use hal::format::{ChannelType, Format, Swizzle};
-use hal::{buffer as b, command, format as f, image as i, memory as m, pass, pool, pso};
-use hal::{
+use crate::hal::command::{ClearColor, ClearDepthStencil, ClearValue};
+use crate::hal::format::{ChannelType, Format, Swizzle};
+use crate::hal::{buffer as b, command, format as f, image as i, memory as m, pass, pool, pso};
+use crate::hal::{
     Backbuffer, DescriptorPool, Device, FrameSync, IndexType, Instance, PhysicalDevice, Primitive,
     Submission, Surface, Swapchain, SwapchainConfig,
 };
