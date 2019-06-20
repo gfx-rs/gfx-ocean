@@ -1,5 +1,6 @@
 use crate::hal::{pso, Backend, DescriptorPool, Device};
-use back::Backend as B;
+use crate::back::Backend as B;
+use crate::translate_shader;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PropagateLocals {
@@ -13,60 +14,59 @@ pub struct Propagation {
     pub set_layout: <B as Backend>::DescriptorSetLayout,
     pub layout: <B as Backend>::PipelineLayout,
     pub pipeline: <B as Backend>::ComputePipeline,
-    pub desc_sets: Vec<<B as Backend>::DescriptorSet>,
+    pub desc_set: <B as Backend>::DescriptorSet,
     pub pool: <B as Backend>::DescriptorPool,
 }
 
 impl Propagation {
-    pub fn init(device: &mut <B as Backend>::Device) -> Self {
+    pub unsafe fn init(device: &mut <B as Backend>::Device) -> Result<Self, failure::Error> {
         let cs_propagate = device
             .create_shader_module(
-                &::translate_shader(
+                &translate_shader(
                     include_str!("../shader/propagate.comp"),
                     pso::Stage::Compute,
                 )
                 .unwrap(),
-            )
-            .unwrap();
+            )?;
 
         let set_layout = device.create_descriptor_set_layout(&[
             pso::DescriptorSetLayoutBinding {
                 binding: 0,
                 ty: pso::DescriptorType::UniformBuffer,
                 count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
             pso::DescriptorSetLayoutBinding {
                 binding: 1,
                 ty: pso::DescriptorType::StorageBuffer,
                 count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
             pso::DescriptorSetLayoutBinding {
                 binding: 2,
                 ty: pso::DescriptorType::StorageBuffer,
                 count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
             pso::DescriptorSetLayoutBinding {
                 binding: 3,
                 ty: pso::DescriptorType::StorageBuffer,
                 count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
             pso::DescriptorSetLayoutBinding {
                 binding: 4,
                 ty: pso::DescriptorType::StorageBuffer,
                 count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
             pso::DescriptorSetLayoutBinding {
                 binding: 5,
                 ty: pso::DescriptorType::StorageBuffer,
                 count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
-        ]);
+        ], &[])?;
 
         let mut pool = device.create_descriptor_pool(
             1, // sets
@@ -80,34 +80,35 @@ impl Propagation {
                     count: 5,
                 },
             ],
-        );
+            pso::DescriptorPoolCreateFlags::empty(),
+        )?;
 
-        let desc_sets = pool.allocate_sets(Some(&set_layout));
-        let layout = device.create_pipeline_layout(Some(&set_layout), &[]);
+        let desc_set = pool.allocate_set(&set_layout)?;
+        let layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
         let pipeline = {
             let mut pipelines = device.create_compute_pipelines(&[pso::ComputePipelineDesc::new(
                 pso::EntryPoint {
                     entry: "main",
                     module: &cs_propagate,
-                    specialization: &[],
+                    specialization: pso::Specialization::default(),
                 },
                 &layout,
-            )]);
+            )], None);
 
             pipelines.remove(0).unwrap()
         };
 
-        Propagation {
+        Ok(Propagation {
             cs_propagate,
             set_layout,
             pool,
             layout,
-            desc_sets,
+            desc_set,
             pipeline,
-        }
+        })
     }
 
-    pub fn destroy(self, device: &mut <B as Backend>::Device) {
+    pub unsafe fn destroy(self, device: &mut <B as Backend>::Device) {
         device.destroy_shader_module(self.cs_propagate);
         device.destroy_descriptor_set_layout(self.set_layout);
         device.destroy_pipeline_layout(self.layout);
@@ -125,15 +126,15 @@ pub struct Correction {
     pub set_layout: <B as Backend>::DescriptorSetLayout,
     pub layout: <B as Backend>::PipelineLayout,
     pub pipeline: <B as Backend>::ComputePipeline,
-    pub desc_sets: Vec<<B as Backend>::DescriptorSet>,
+    pub desc_set: <B as Backend>::DescriptorSet,
     pub pool: <B as Backend>::DescriptorPool,
 }
 
 impl Correction {
-    pub fn init(device: &mut <B as Backend>::Device) -> Self {
+    pub unsafe fn init(device: &mut <B as Backend>::Device) -> Result<Self, failure::Error> {
         let cs_correct = device
             .create_shader_module(
-                &::translate_shader(
+                &translate_shader(
                     include_str!("../shader/correction.comp"),
                     pso::Stage::Compute,
                 )
@@ -147,32 +148,33 @@ impl Correction {
                 ty: pso::DescriptorType::UniformBuffer,
                 count: 1,
                 stage_flags: pso::ShaderStageFlags::COMPUTE,
+                immutable_samplers: false,
             },
             pso::DescriptorSetLayoutBinding {
                 binding: 1,
                 ty: pso::DescriptorType::StorageBuffer,
                 count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
             pso::DescriptorSetLayoutBinding {
                 binding: 2,
                 ty: pso::DescriptorType::StorageBuffer,
                 count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
             pso::DescriptorSetLayoutBinding {
                 binding: 3,
                 ty: pso::DescriptorType::StorageBuffer,
                 count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
             pso::DescriptorSetLayoutBinding {
                 binding: 4,
                 ty: pso::DescriptorType::StorageImage,
                 count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
+                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
-        ]);
+        ], &[])?;
 
         let mut pool = device.create_descriptor_pool(
             1, // sets
@@ -190,34 +192,35 @@ impl Correction {
                     count: 1,
                 },
             ],
-        );
+            pso::DescriptorPoolCreateFlags::empty()
+        )?;
 
-        let desc_sets = pool.allocate_sets(Some(&set_layout));
-        let layout = device.create_pipeline_layout(Some(&set_layout), &[]);
+        let desc_set = pool.allocate_set(&set_layout)?;
+        let layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
         let pipeline = {
             let mut pipelines = device.create_compute_pipelines(&[pso::ComputePipelineDesc::new(
                 pso::EntryPoint {
                     entry: "main",
                     module: &cs_correct,
-                    specialization: &[],
+                    specialization: pso::Specialization::default(),
                 },
                 &layout,
-            )]);
+            )], None);
 
             pipelines.remove(0).unwrap()
         };
 
-        Correction {
+        Ok(Correction {
             cs_correct,
             set_layout,
             pool,
             layout,
-            desc_sets,
+            desc_set,
             pipeline,
-        }
+        })
     }
 
-    pub fn destroy(self, device: &mut <B as Backend>::Device) {
+    pub unsafe fn destroy(self, device: &mut <B as Backend>::Device) {
         device.destroy_shader_module(self.cs_correct);
         device.destroy_descriptor_set_layout(self.set_layout);
         device.destroy_pipeline_layout(self.layout);

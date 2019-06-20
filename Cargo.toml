@@ -1,5 +1,5 @@
 [package]
-name = "ocean"
+name = "gfx-ocean"
 version = "0.1.0"
 edition = "2018"
 
@@ -16,16 +16,15 @@ path = "src/main.rs"
 [dependencies]
 env_logger = "0.4"
 log = "0.3"
-winit = "0.11"
-cgmath = "0.15"
-time = "0.1.38"
+winit = "0.19"
+nalgebra-glm = "0.4"
 glsl-to-spirv = "0.1"
 panopaea = { git = "https://github.com/msiglreith/panopaea.git", rev = "e958e5f" }
+failure = "0.1"
 
-gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", rev= "7a37468" }
-
-gfx-backend-vulkan = { git = "https://github.com/gfx-rs/gfx.git", rev= "7a37468", optional = true, features = ["glsl-to-spirv"] }
+gfx-hal = "0.2"
+gfx-backend-vulkan = { version = "0.2", optional = true }
 [target.'cfg(windows)'.dependencies]
-gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", rev= "7a37468" , optional = true}
+gfx-backend-dx12 = { version = "0.2", optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
-gfx-backend-metal = { git = "https://github.com/gfx-rs/gfx.git", rev= "7a37468" , optional = true}
+gfx-backend-metal = { version = "0.2", optional = true }

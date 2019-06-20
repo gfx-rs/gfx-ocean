@@ -1,5 +1,6 @@
 use crate::hal::{pso, Backend, DescriptorPool, Device};
-use back::Backend as B;
+use crate::back::Backend as B;
+use crate::translate_shader;
 
 pub struct Fft {
     pub cs_fft_row: <B as Backend>::ShaderModule,
@@ -13,16 +14,16 @@ pub struct Fft {
 }
 
 impl Fft {
-    pub fn init(device: &mut <B as Backend>::Device) -> Self {
+    pub unsafe fn init(device: &mut <B as Backend>::Device) -> Result<Self, failure::Error> {
         let cs_fft_row = device
             .create_shader_module(
-                &::translate_shader(include_str!("../shader/fft_row.comp"), pso::Stage::Compute)
+                &translate_shader(include_str!("../shader/fft_row.comp"), pso::Stage::Compute)
                     .unwrap(),
             )
             .unwrap();
         let cs_fft_col = device
             .create_shader_module(
-                &::translate_shader(include_str!("../shader/fft_col.comp"), pso::Stage::Compute)
+                &translate_shader(include_str!("../shader/fft_col.comp"), pso::Stage::Compute)
                     .unwrap(),
             )
             .unwrap();
@@ -32,7 +33,8 @@ impl Fft {
             ty: pso::DescriptorType::StorageBuffer,
             count: 1,
             stage_flags: pso::ShaderStageFlags::COMPUTE,
-        }]);
+            immutable_samplers: false,
+        }], &[])?;
 
         let mut pool = device.create_descriptor_pool(
             3,
@@ -40,17 +42,19 @@ impl Fft {
                 ty: pso::DescriptorType::StorageBuffer,
                 count: 3,
             }],
-        );
+            pso::DescriptorPoolCreateFlags::empty(),
+        )?;
 
-        let desc_sets = pool.allocate_sets(vec![&set_layout, &set_layout, &set_layout]);
-        let layout = device.create_pipeline_layout(Some(&set_layout), &[]);
+        let mut desc_sets = Vec::new();
+        pool.allocate_sets(vec![&set_layout, &set_layout, &set_layout], &mut desc_sets)?;
+        let layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
         let (row_pass, col_pass) = {
             let mut pipelines = device.create_compute_pipelines(&[
                 pso::ComputePipelineDesc::new(
                     pso::EntryPoint {
                         entry: "main",
                         module: &cs_fft_row,
-                        specialization: &[],
+                        specialization: pso::Specialization::default(),
                     },
                     &layout,
                 ),
@@ -58,18 +62,18 @@ impl Fft {
                     pso::EntryPoint {
                         entry: "main",
                         module: &cs_fft_col,
-                        specialization: &[],
+                        specialization: pso::Specialization::default(),
                     },
                     &layout,
                 ),
-            ]);
+            ], None);
 
             let row_pass = pipelines.remove(0).unwrap();
             let col_pass = pipelines.remove(0).unwrap();
             (row_pass, col_pass)
         };
 
-        Fft {
+        Ok(Fft {
             cs_fft_row,
             cs_fft_col,
             set_layout,
@@ -78,10 +82,10 @@ impl Fft {
             desc_sets,
             row_pass,
             col_pass,
-        }
+        })
     }
 
-    pub fn destroy(self, device: &mut <B as Backend>::Device) {
+    pub unsafe fn destroy(self, device: &mut <B as Backend>::Device) {
         device.destroy_shader_module(self.cs_fft_row);
         device.destroy_shader_module(self.cs_fft_col);
         device.destroy_descriptor_set_layout(self.set_layout);
