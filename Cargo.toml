@@ -13,10 +13,6 @@ metal = ["gfx-backend-metal"]
 name = "ocean"
 path = "src/main.rs"
 
-[[bin]]
-name = "ocean_generator"
-path = "bin/ocean_generator.rs"
-
 [dependencies]
 env_logger = "0.4"
 log = "0.3"
