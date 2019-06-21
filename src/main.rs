@@ -24,7 +24,6 @@ use crate::hal::{
 };
 
 use winit::dpi::PhysicalSize;
-use panopaea::ocean::empirical;
 
 #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
 use ocean::{CorrectionLocals, PropagateLocals};
@@ -67,7 +66,6 @@ const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
 
 fn translate_shader(code: &str, stage: pso::Stage) -> Result<Vec<u8>, String> {
     use glsl_to_spirv::{compile, ShaderType};
-    use std::io::Read;
 
     let ty = match stage {
         pso::Stage::Vertex => ShaderType::Vertex,

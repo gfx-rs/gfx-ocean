@@ -81,10 +81,6 @@ void main() {
     const float linear_roughness = roughness * roughness;
 
     vec3 F = F_Schlick(vec3(0.04, 0.04, 0.07), vec3(1.0), HdotV);
-    float G = G_Schlick(NdotL, NdotV, linear_roughness);
-    float D = D_GGX(linear_roughness, NdotH);
 
-    vec3 specular = F * G * D / (4.0 * NdotL * NdotV);
-
-    Target0 = vec4(max(0.7, NdotL) * water_albedo * (1 - F) + specular * NdotL, 1.0f);
+    Target0 = vec4(max(0.7, NdotL) * water_albedo * (1 - F), 1.0f);
 }
