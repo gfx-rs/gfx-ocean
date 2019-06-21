@@ -57,6 +57,7 @@ struct Locals {
 
 const RESOLUTION: usize = 512;
 const HALF_RESOLUTION: usize = 128;
+const DOMAIN_SIZE: f32 = 1000.0;
 
 const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
     aspects: f::Aspects::COLOR,
@@ -761,32 +762,6 @@ fn main() -> Result<(), failure::Error> {
     let spectrum_len = RESOLUTION * RESOLUTION * 2 * std::mem::size_of::<f32>();
     let omega_len = RESOLUTION * RESOLUTION * std::mem::size_of::<f32>();
 
-    // Initialize ocean..
-    let parameters = empirical::Parameters {
-        water_depth: 100.0,
-        fetch: 800.0 * 1000.0,
-        wind_speed: 20.0,
-
-        water_density: 1000.0,
-        surface_tension: 0.072,
-        gravity: 9.81,
-
-        swell: 0.0,
-        domain_size: 1000.0,
-    };
-
-    let spectrum = empirical::SpectrumTMA {
-        jonswap: empirical::SpectrumJONSWAP {
-            wind_speed: parameters.wind_speed,
-            fetch: parameters.fetch,
-            gravity: parameters.gravity,
-        },
-        depth: parameters.water_depth,
-    };
-
-    let (height_spectrum, omega) =
-        empirical::build_height_spectrum(&parameters, &spectrum, RESOLUTION);
-
     // Upload initial data
     let (omega_staging_buffer, omega_staging_memory) = {
         let buffer_stride = std::mem::size_of::<f32>() as u64;
@@ -814,7 +789,11 @@ fn main() -> Result<(), failure::Error> {
             let mut data = device
                 .acquire_mapping_writer::<f32>(&buffer_memory, 0..buffer_len)
                 .unwrap();
-            data.copy_from_slice(&omega.into_raw_vec());
+            let mut file = fs::File::open("data/omega.bin").unwrap();
+            let mut contents = Vec::new();
+            file.read_to_end(&mut contents);
+            let omega: Vec<f32> = bincode::deserialize(&contents[..]).unwrap();
+            data.copy_from_slice(&omega);
             device.release_mapping_writer(data);
         }
 
@@ -847,13 +826,11 @@ fn main() -> Result<(), failure::Error> {
             let mut data = device
                 .acquire_mapping_writer::<[f32; 2]>(&buffer_memory, 0..buffer_len)
                 .unwrap();
-            // TODO: slow
-            let spectrum = height_spectrum
-                .into_raw_vec()
-                .iter()
-                .map(|c| [c.re, c.im])
-                .collect::<Vec<_>>();
 
+            let mut file = fs::File::open("data/spectrum.bin").unwrap();
+            let mut contents = Vec::new();
+            file.read_to_end(&mut contents);
+            let spectrum: Vec<[f32; 2]> = bincode::deserialize(&contents[..]).unwrap();
             data.copy_from_slice(&spectrum);
             device.release_mapping_writer(data);
         }
@@ -1112,6 +1089,8 @@ fn main() -> Result<(), failure::Error> {
 
     let mut running = true;
     let mut frame_id = 0;
+    let mut avg_cpu_time = 0.0;
+
     while running {
         events_loop.poll_events(|event| match event {
             winit::Event::WindowEvent { event, .. } => match event {
@@ -1137,7 +1116,9 @@ fn main() -> Result<(), failure::Error> {
         let current = time_now.duration_since(time_start).as_micros() as f32 / 1_000_000.0;
         time_last = time_now;
 
-        window.set_title(&format!("{:?}", 1.0 / elapsed));
+        let factor = 0.1;
+        avg_cpu_time = avg_cpu_time * (1.0 - factor) + elapsed * factor;
+        window.set_title(&format!("gfx-ocean :: {:.*} ms", 2, avg_cpu_time * 1000.0));
 
         let (swap_image, _) = swap_chain.acquire_image(!0, Some(&free_acquire_semaphore), None)?;
 
@@ -1182,7 +1163,7 @@ fn main() -> Result<(), failure::Error> {
         locals[0] = PropagateLocals {
             time: current,
             resolution: RESOLUTION as i32,
-            domain_size: parameters.domain_size,
+            domain_size: DOMAIN_SIZE,
         };
         device.release_mapping_writer(locals)?;
 
