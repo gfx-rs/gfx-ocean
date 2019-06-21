@@ -87,8 +87,6 @@ fn translate_shader(code: &str, stage: pso::Stage) -> Result<Vec<u8>, String> {
 fn main() -> Result<(), failure::Error> {
     unsafe {
     env_logger::init().unwrap();
-    #[cfg(feature = "metal")]
-    let mut autorelease_pool = unsafe { back::AutoreleasePool::new() };
 
     let mut events_loop = winit::EventsLoop::new();
     let wb = winit::WindowBuilder::new()
@@ -1356,11 +1354,6 @@ fn main() -> Result<(), failure::Error> {
         swap_chain.present(&mut queue_group.queues[0], swap_image, Some(&submission_complete_semaphores[frame_idx]))?;
 
         frame_id += 1;
-
-        #[cfg(feature = "metal")]
-        unsafe {
-            autorelease_pool.reset();
-        }
     }
 
     // cleanup
