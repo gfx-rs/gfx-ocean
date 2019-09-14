@@ -14,7 +14,7 @@ pub struct Fft {
 }
 
 impl Fft {
-    pub unsafe fn init(device: &mut <B as Backend>::Device) -> Result<Self, failure::Error> {
+    pub unsafe fn init(device: &mut <B as Backend>::Device) -> Result<Self, ()> {
         let cs_fft_row = device
             .create_shader_module(
                 &translate_shader(include_str!("../shader/fft_row.comp"), pso::Stage::Compute)
@@ -34,7 +34,7 @@ impl Fft {
             count: 1,
             stage_flags: pso::ShaderStageFlags::COMPUTE,
             immutable_samplers: false,
-        }], &[])?;
+        }], &[]).map_err(|_| ())?;
 
         let mut pool = device.create_descriptor_pool(
             3,
@@ -43,11 +43,13 @@ impl Fft {
                 count: 3,
             }],
             pso::DescriptorPoolCreateFlags::empty(),
-        )?;
+        ).map_err(|_| ())?;
 
         let mut desc_sets = Vec::new();
-        pool.allocate_sets(vec![&set_layout, &set_layout, &set_layout], &mut desc_sets)?;
-        let layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
+        pool.allocate_sets(vec![&set_layout, &set_layout, &set_layout], &mut desc_sets)
+            .map_err(|_| ())?;
+        let layout = device.create_pipeline_layout(Some(&set_layout), &[])
+            .map_err(|_| ())?;
         let (row_pass, col_pass) = {
             let mut pipelines = device.create_compute_pipelines(&[
                 pso::ComputePipelineDesc::new(
