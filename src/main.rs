@@ -64,7 +64,7 @@ const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
     layers: 0..1,
 };
 
-fn translate_shader(code: &str, stage: pso::Stage) -> Result<Vec<u8>, String> {
+fn translate_shader(code: &str, stage: pso::Stage) -> Result<Vec<u32>, String> {
     use glsl_to_spirv::{compile, ShaderType};
 
     let ty = match stage {
@@ -76,15 +76,11 @@ fn translate_shader(code: &str, stage: pso::Stage) -> Result<Vec<u8>, String> {
         pso::Stage::Compute => ShaderType::Compute,
     };
 
-    compile(code, ty).map(|mut out| {
-        let mut code = Vec::new();
-        out.read_to_end(&mut code).unwrap();
-        code
-    })
+    compile(code, ty).map(|out| pso::read_spirv(out).unwrap())
 }
 
 #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
-fn main() -> Result<(), failure::Error> {
+fn main() -> Result<(), ()> {
     unsafe {
     env_logger::init().unwrap();
 
@@ -136,7 +132,8 @@ fn main() -> Result<(), failure::Error> {
         .unwrap();
 
     let mut general_pool =
-        device.create_command_pool_typed(&queue_group, pool::CommandPoolCreateFlags::empty())?;
+        device.create_command_pool_typed(&queue_group, pool::CommandPoolCreateFlags::empty())
+        .map_err(|_| ())?;
 
     let mut swap_config = SwapchainConfig::from_caps(&caps, surface_format, Extent2D {
         width: pixel_width as _,
@@ -144,7 +141,8 @@ fn main() -> Result<(), failure::Error> {
     });
     swap_config.present_mode = hal::window::PresentMode::Immediate; // disable vsync
 
-    let (mut swap_chain, swap_images) = device.create_swapchain(&mut surface, swap_config, None)?;
+    let (mut swap_chain, swap_images) = device.create_swapchain(&mut surface, swap_config, None)
+        .map_err(|_| ())?;
     let frame_images = swap_images
             .into_iter()
             .map(|image| {
@@ -163,11 +161,13 @@ fn main() -> Result<(), failure::Error> {
 
     let frames_in_flight = 3;
 
-    let mut upload_fence = device.create_fence(false)?;
+    let mut upload_fence = device.create_fence(false)
+        .map_err(|_| ())?;
 
     let mut image_acquire_semaphores = Vec::with_capacity(frame_images.len());
     let mut free_acquire_semaphore = device
-        .create_semaphore()?;
+        .create_semaphore()
+        .map_err(|_| ())?;
 
     let mut submission_complete_semaphores = Vec::with_capacity(frames_in_flight);
     let mut submission_complete_fences = Vec::with_capacity(frames_in_flight);
@@ -178,24 +178,29 @@ fn main() -> Result<(), failure::Error> {
     for _ in 0..frames_in_flight {
         cmd_pools.push(
             device
-                .create_command_pool_typed(&queue_group, pool::CommandPoolCreateFlags::empty())?);
+                .create_command_pool_typed(&queue_group, pool::CommandPoolCreateFlags::empty())
+                .map_err(|_| ())?
+        );
     }
 
     for _ in 0..frame_images.len() {
         image_acquire_semaphores.push(
             device
-                .create_semaphore()?
+                .create_semaphore()
+                .map_err(|_| ())?
         );
     }
 
     for i in 0..frames_in_flight {
         submission_complete_semaphores.push(
             device
-                .create_semaphore()?
+                .create_semaphore()
+                .map_err(|_| ())?
         );
         submission_complete_fences.push(
             device
-                .create_fence(true)?
+                .create_fence(true)
+                .map_err(|_| ())?
         );
         cmd_buffers.push(cmd_pools[i].acquire_command_buffer::<command::OneShot>());
     }
@@ -229,7 +234,8 @@ fn main() -> Result<(), failure::Error> {
         .allocate_memory(mem_type, depth_mem_reqs.size)
         .unwrap();
     device
-        .bind_image_memory(&depth_memory, 0, &mut depth_image)?;
+        .bind_image_memory(&depth_memory, 0, &mut depth_image)
+        .map_err(|_| ())?;
 
     let depth_view = device
         .create_image_view(
@@ -265,9 +271,12 @@ fn main() -> Result<(), failure::Error> {
             .unwrap()
     };
 
-    let fft = fft::Fft::init(&mut device)?;
-    let propagate = ocean::Propagation::init(&mut device)?;
-    let correction = ocean::Correction::init(&mut device)?;
+    let fft = fft::Fft::init(&mut device)
+        .map_err(|_| ())?;
+    let propagate = ocean::Propagation::init(&mut device)
+        .map_err(|_| ())?;
+    let correction = ocean::Correction::init(&mut device)
+        .map_err(|_| ())?;
 
     let set_layout = device.create_descriptor_set_layout(&[
         pso::DescriptorSetLayoutBinding {
@@ -288,9 +297,11 @@ fn main() -> Result<(), failure::Error> {
             count: 1,
             stage_flags: pso::ShaderStageFlags::VERTEX | pso::ShaderStageFlags::FRAGMENT, immutable_samplers: false
         },
-    ], &[])?;
+    ], &[])
+    .map_err(|_| ())?;
 
-    let ocean_layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
+    let ocean_layout = device.create_pipeline_layout(Some(&set_layout), &[])
+        .map_err(|_| ())?;
     let ocean_pass = {
         let attachment = pass::Attachment {
             format: Some(surface_format),
@@ -322,7 +333,8 @@ fn main() -> Result<(), failure::Error> {
             resolves: &[],
         };
 
-        device.create_render_pass(&[attachment, depth_attachment], &[subpass], &[])?
+        device.create_render_pass(&[attachment, depth_attachment], &[subpass], &[])
+            .map_err(|_| ())?
     };
 
     let extent = i::Extent {
@@ -382,18 +394,18 @@ fn main() -> Result<(), failure::Error> {
         );
 
         ocean_pipe_desc.depth_stencil = pso::DepthStencilDesc {
-            depth: pso::DepthTest::On {
+            depth: Some(pso::DepthTest {
                 fun: pso::Comparison::LessEqual,
                 write: true,
-            },
+            }),
             depth_bounds: false,
-            stencil: pso::StencilTest::Off,
+            stencil: None,
         };
         ocean_pipe_desc.rasterizer.depth_clamping = false;
-        ocean_pipe_desc.blender.targets.push(pso::ColorBlendDesc(
-            pso::ColorMask::ALL,
-            pso::BlendState::Off,
-        ));
+        ocean_pipe_desc.blender.targets.push(pso::ColorBlendDesc {
+            mask: pso::ColorMask::ALL,
+            blend: None,
+        });
         ocean_pipe_desc.vertex_buffers.push(pso::VertexBufferDesc {
             binding: 0,
             stride: std::mem::size_of::<Vertex>() as u32,
@@ -432,7 +444,8 @@ fn main() -> Result<(), failure::Error> {
         device.create_graphics_pipelines(&[ocean_pipe_desc], None)
     };
 
-    let sampler = device.create_sampler(i::SamplerInfo::new(i::Filter::Linear, i::WrapMode::Tile))?;
+    let sampler = device.create_sampler(i::SamplerInfo::new(i::Filter::Linear, i::WrapMode::Tile))
+        .map_err(|_| ())?;
 
     let mut desc_pool = device.create_descriptor_pool(
         1, // sets
@@ -451,9 +464,11 @@ fn main() -> Result<(), failure::Error> {
             },
         ],
         pso::DescriptorPoolCreateFlags::empty()
-    )?;
+    )
+    .map_err(|_| ())?;
 
-    let desc_set = desc_pool.allocate_set(&set_layout)?;
+    let desc_set = desc_pool.allocate_set(&set_layout)
+        .map_err(|_| ())?;
 
     let (locals_buffer, locals_memory) = {
         let buffer_stride = std::mem::size_of::<Locals>() as u64;
@@ -472,7 +487,8 @@ fn main() -> Result<(), failure::Error> {
             .into();
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
-        device.bind_buffer_memory(&buffer_memory, 0, &mut locals_buffer)?;
+        device.bind_buffer_memory(&buffer_memory, 0, &mut locals_buffer)
+            .map_err(|_| ())?;
 
         {
             let mut locals = device
@@ -484,7 +500,8 @@ fn main() -> Result<(), failure::Error> {
                 a_cam_pos: camera.position().into(),
                 _pad: [0.0; 1],
             };
-            device.release_mapping_writer(locals)?;
+            device.release_mapping_writer(locals)
+                .map_err(|_| ())?;
         }
 
         (locals_buffer, buffer_memory)
@@ -509,7 +526,8 @@ fn main() -> Result<(), failure::Error> {
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         device
-            .bind_buffer_memory(&buffer_memory, 0, &mut vertex_buffer)?;
+            .bind_buffer_memory(&buffer_memory, 0, &mut vertex_buffer)
+            .map_err(|_| ())?;
 
         {
             let mut vertices = device
@@ -526,7 +544,8 @@ fn main() -> Result<(), failure::Error> {
                     };
                 }
             }
-            device.release_mapping_writer(vertices)?;
+            device.release_mapping_writer(vertices)
+                .map_err(|_| ())?;
         }
 
         (vertex_buffer, buffer_memory)
@@ -550,7 +569,8 @@ fn main() -> Result<(), failure::Error> {
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         device
-            .bind_buffer_memory(&buffer_memory, 0, &mut buffer)?;
+            .bind_buffer_memory(&buffer_memory, 0, &mut buffer)
+            .map_err(|_| ())?;
 
         {
             let mut patch = device
@@ -568,7 +588,8 @@ fn main() -> Result<(), failure::Error> {
             patch[3] = PatchOffset {
                 a_offset: [(HALF_RESOLUTION - 1) as f32, (HALF_RESOLUTION - 1) as f32],
             };
-            device.release_mapping_writer(patch)?;
+            device.release_mapping_writer(patch)
+                .map_err(|_| ())?;
         }
 
         (buffer, buffer_memory)
@@ -592,7 +613,8 @@ fn main() -> Result<(), failure::Error> {
 
         let buffer_memory = device.allocate_memory(mem_type, buffer_req.size).unwrap();
         device
-            .bind_buffer_memory(&buffer_memory, 0, &mut index_buffer)?;
+            .bind_buffer_memory(&buffer_memory, 0, &mut index_buffer)
+            .map_err(|_| ())?;
 
         {
             let mut indices = device
@@ -860,7 +882,8 @@ fn main() -> Result<(), failure::Error> {
 
     let image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
     device
-        .bind_image_memory(&image_memory, 0, &mut displacement_map)?;
+        .bind_image_memory(&image_memory, 0, &mut displacement_map)
+        .map_err(|_| ())?;
     let displacement_uav = device
         .create_image_view(
             &displacement_map,
@@ -923,7 +946,7 @@ fn main() -> Result<(), failure::Error> {
         );
         cmd_buffer.finish();
 
-        queue_group.queues[0].submit_nosemaphores(Some(&cmd_buffer), Some(&mut upload_fence));
+        queue_group.queues[0].submit_without_semaphores(Some(&cmd_buffer), Some(&mut upload_fence));
         device.wait_for_fence(&upload_fence, !0);
     }
 
@@ -1116,7 +1139,8 @@ fn main() -> Result<(), failure::Error> {
         avg_cpu_time = avg_cpu_time * (1.0 - factor) + elapsed * factor;
         window.set_title(&format!("gfx-ocean :: {:.*} ms", 2, avg_cpu_time * 1000.0));
 
-        let (swap_image, _) = swap_chain.acquire_image(!0, Some(&free_acquire_semaphore), None)?;
+        let (swap_image, _) = swap_chain.acquire_image(!0, Some(&free_acquire_semaphore), None)
+            .map_err(|_| ())?;
 
         core::mem::swap(
             &mut free_acquire_semaphore,
@@ -1126,10 +1150,12 @@ fn main() -> Result<(), failure::Error> {
         let frame_idx = frame_id as usize % frames_in_flight;
 
             device
-                .wait_for_fence(&submission_complete_fences[frame_idx], !0)?;
+                .wait_for_fence(&submission_complete_fences[frame_idx], !0)
+                .map_err(|_| ())?;
             device
-                .reset_fence(&submission_complete_fences[frame_idx])?;
-            cmd_pools[frame_idx].reset();
+                .reset_fence(&submission_complete_fences[frame_idx])
+                .map_err(|_| ())?;
+            cmd_pools[frame_idx].reset(false);
 
         // Rendering
         let cmd_buffer = &mut cmd_buffers[frame_idx];
@@ -1148,7 +1174,8 @@ fn main() -> Result<(), failure::Error> {
             a_cam_pos: camera.position().into(),
             _pad: [0.0; 1],
         };
-        device.release_mapping_writer(locals)?;
+        device.release_mapping_writer(locals)
+            .map_err(|_| ())?;
 
         let mut locals = device
             .acquire_mapping_writer::<PropagateLocals>(
@@ -1161,7 +1188,8 @@ fn main() -> Result<(), failure::Error> {
             resolution: RESOLUTION as i32,
             domain_size: DOMAIN_SIZE,
         };
-        device.release_mapping_writer(locals)?;
+        device.release_mapping_writer(locals)
+            .map_err(|_| ())?;
 
         cmd_buffer.begin();
         cmd_buffer.bind_compute_pipeline(&propagate.pipeline);
@@ -1334,7 +1362,7 @@ fn main() -> Result<(), failure::Error> {
                     h: pixel_height as _,
                 },
                 &[
-                    ClearValue::Color(ClearColor::Float([0.6, 0.6, 0.6, 1.0])),
+                    ClearValue::Color(ClearColor::Sfloat([0.6, 0.6, 0.6, 1.0])),
                     ClearValue::DepthStencil(ClearDepthStencil(1.0, 0)),
                 ],
             );
@@ -1351,7 +1379,8 @@ fn main() -> Result<(), failure::Error> {
         };
         queue_group.queues[0].submit(submission, Some(&submission_complete_fences[frame_idx]));
 
-        swap_chain.present(&mut queue_group.queues[0], swap_image, Some(&submission_complete_semaphores[frame_idx]))?;
+        swap_chain.present(&mut queue_group.queues[0], swap_image, Some(&submission_complete_semaphores[frame_idx]))
+            .map_err(|_| ())?;
 
         frame_id += 1;
     }

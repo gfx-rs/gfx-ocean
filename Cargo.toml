@@ -15,16 +15,15 @@ path = "src/main.rs"
 
 [dependencies]
 env_logger = "0.4"
-log = "0.3"
+log = "0.4"
 winit = "0.19"
 nalgebra-glm = "0.4"
 glsl-to-spirv = "0.1"
-failure = "0.1"
 bincode = "1.1"
 
-gfx-hal = "0.2"
-gfx-backend-vulkan = { version = "0.2", optional = true }
+gfx-hal = "0.3"
+gfx-backend-vulkan = { version = "0.3", optional = true, features = ["winit"] }
 [target.'cfg(windows)'.dependencies]
-gfx-backend-dx12 = { version = "0.2", optional = true }
+gfx-backend-dx12 = { version = "0.3", optional = true, features = ["winit"] }
 [target.'cfg(target_os = "macos")'.dependencies]
-gfx-backend-metal = { version = "0.2", optional = true }
+gfx-backend-metal = { version = "0.3", optional = true, features = ["winit"] }

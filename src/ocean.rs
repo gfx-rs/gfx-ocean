@@ -19,7 +19,7 @@ pub struct Propagation {
 }
 
 impl Propagation {
-    pub unsafe fn init(device: &mut <B as Backend>::Device) -> Result<Self, failure::Error> {
+    pub unsafe fn init(device: &mut <B as Backend>::Device) -> Result<Self, ()> {
         let cs_propagate = device
             .create_shader_module(
                 &translate_shader(
@@ -27,7 +27,7 @@ impl Propagation {
                     pso::Stage::Compute,
                 )
                 .unwrap(),
-            )?;
+            ).map_err(|_| ())?;
 
         let set_layout = device.create_descriptor_set_layout(&[
             pso::DescriptorSetLayoutBinding {
@@ -66,7 +66,8 @@ impl Propagation {
                 count: 1,
                 stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
-        ], &[])?;
+        ], &[])
+        .map_err(|_| ())?;
 
         let mut pool = device.create_descriptor_pool(
             1, // sets
@@ -81,10 +82,12 @@ impl Propagation {
                 },
             ],
             pso::DescriptorPoolCreateFlags::empty(),
-        )?;
+        ).map_err(|_| ())?;
 
-        let desc_set = pool.allocate_set(&set_layout)?;
-        let layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
+        let desc_set = pool.allocate_set(&set_layout)
+            .map_err(|_| ())?;
+        let layout = device.create_pipeline_layout(Some(&set_layout), &[])
+            .map_err(|_| ())?;
         let pipeline = {
             let mut pipelines = device.create_compute_pipelines(&[pso::ComputePipelineDesc::new(
                 pso::EntryPoint {
@@ -131,7 +134,7 @@ pub struct Correction {
 }
 
 impl Correction {
-    pub unsafe fn init(device: &mut <B as Backend>::Device) -> Result<Self, failure::Error> {
+    pub unsafe fn init(device: &mut <B as Backend>::Device) -> Result<Self, ()> {
         let cs_correct = device
             .create_shader_module(
                 &translate_shader(
@@ -174,7 +177,8 @@ impl Correction {
                 count: 1,
                 stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
             },
-        ], &[])?;
+        ], &[])
+        .map_err(|_| ())?;
 
         let mut pool = device.create_descriptor_pool(
             1, // sets
@@ -193,10 +197,13 @@ impl Correction {
                 },
             ],
             pso::DescriptorPoolCreateFlags::empty()
-        )?;
+        )
+        .map_err(|_| ())?;
 
-        let desc_set = pool.allocate_set(&set_layout)?;
-        let layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
+        let desc_set = pool.allocate_set(&set_layout)
+            .map_err(|_| ())?;
+        let layout = device.create_pipeline_layout(Some(&set_layout), &[])
+            .map_err(|_| ())?;
         let pipeline = {
             let mut pipelines = device.create_compute_pipelines(&[pso::ComputePipelineDesc::new(
                 pso::EntryPoint {
