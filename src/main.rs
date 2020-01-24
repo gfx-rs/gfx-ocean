@@ -1111,291 +1111,294 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     _ => (),
                 },
+                winit::event::Event::MainEventsCleared => {
+                    window.request_redraw();
+                },
+                winit::event::Event::RedrawRequested(_) => {
+                    let time_now = Instant::now();
+                    let elapsed = time_now.duration_since(time_last).as_micros() as f32 / 1_000_000.0;
+                    let current = time_now.duration_since(time_start).as_micros() as f32 / 1_000_000.0;
+                    time_last = time_now;
+
+                    let factor = 0.1;
+                    avg_cpu_time = avg_cpu_time * (1.0 - factor) + elapsed * factor;
+                    window.set_title(&format!("gfx-ocean :: {:.*} ms", 2, avg_cpu_time * 1000.0));
+
+                    let (swap_image, _) = surface.acquire_image(!0).unwrap();
+                    let swap_framebuffer = device
+                        .create_framebuffer(
+                            &ocean_pass,
+                            vec![swap_image.borrow(), &depth_view],
+                            i::Extent {
+                                width: pixel_width as _,
+                                height: pixel_height as _,
+                                depth: 1,
+                            },
+                        )
+                        .unwrap();
+
+                    let frame_idx = frame_id as usize % frames_in_flight;
+
+                    device
+                        .wait_for_fence(&submission_complete_fences[frame_idx], !0)
+                        .unwrap();
+                    device.reset_fence(&submission_complete_fences[frame_idx]).unwrap();
+                    cmd_pools[frame_idx].reset(false);
+
+                    // Rendering
+                    let cmd_buffer = &mut cmd_buffers[frame_idx];
+
+                    // Update view
+                    camera.update(elapsed);
+                    {
+                        let buffer_len = std::mem::size_of::<Locals>() as u64;
+                        let locals_raw = device.map_memory(&locals_memory, 0..buffer_len).unwrap();
+                        let locals = Locals {
+                            a_proj: perspective.into(),
+                            a_view: camera.view().into(),
+                            a_cam_pos: camera.position().into(),
+                            _pad: [0.0; 1],
+                        };
+                        std::ptr::copy_nonoverlapping(
+                            &locals as *const _ as *const _,
+                            locals_raw,
+                            buffer_len as _,
+                        );
+                        device
+                            .flush_mapped_memory_ranges(iter::once((&locals_memory, ..)))
+                            .unwrap();
+                        device.unmap_memory(&locals_memory);
+                    }
+
+                    {
+                        let buffer_len = std::mem::size_of::<PropagateLocals>() as u64;
+                        let locals_raw = device.map_memory(&propagate_locals_memory, 0..buffer_len).unwrap();
+                        let locals = PropagateLocals {
+                            time: current,
+                            resolution: RESOLUTION as i32,
+                            domain_size: DOMAIN_SIZE,
+                        };
+                        std::ptr::copy_nonoverlapping(
+                            &locals as *const _ as *const _,
+                            locals_raw,
+                            buffer_len as _,
+                        );
+                        device
+                            .flush_mapped_memory_ranges(iter::once((&propagate_locals_memory, ..)))
+                            .unwrap();
+                        device.unmap_memory(&propagate_locals_memory);
+                    }
+
+                    cmd_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
+                    cmd_buffer.bind_compute_pipeline(&propagate.pipeline);
+                    cmd_buffer.bind_compute_descriptor_sets(
+                        &propagate.layout,
+                        0,
+                        Some(&propagate.desc_set),
+                        &[],
+                    );
+                    cmd_buffer.dispatch([RESOLUTION as u32, RESOLUTION as u32, 1]);
+
+                    let dx_barrier = m::Barrier::Buffer {
+                        states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        target: &dx_spec,
+                        families: None,
+                        range: None..None,
+                    };
+                    let dy_barrier = m::Barrier::Buffer {
+                        states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        target: &dy_spec,
+                        families: None,
+                        range: None..None,
+                    };
+                    let dz_barrier = m::Barrier::Buffer {
+                        states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        target: &dz_spec,
+                        families: None,
+                        range: None..None,
+                    };
+                    cmd_buffer.pipeline_barrier(
+                        pso::PipelineStage::COMPUTE_SHADER..pso::PipelineStage::COMPUTE_SHADER,
+                        m::Dependencies::empty(),
+                        &[dx_barrier, dy_barrier, dz_barrier],
+                    );
+
+                    cmd_buffer.bind_compute_pipeline(&fft.row_pass);
+                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[0..1], &[]);
+                    cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
+                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[1..2], &[]);
+                    cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
+                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[2..3], &[]);
+                    cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
+
+                    let dx_barrier = m::Barrier::Buffer {
+                        states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
+                            ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        target: &dx_spec,
+                        families: None,
+                        range: None..None,
+                    };
+                    let dy_barrier = m::Barrier::Buffer {
+                        states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
+                            ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        target: &dy_spec,
+                        families: None,
+                        range: None..None,
+                    };
+                    let dz_barrier = m::Barrier::Buffer {
+                        states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
+                            ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        target: &dz_spec,
+                        families: None,
+                        range: None..None,
+                    };
+                    cmd_buffer.pipeline_barrier(
+                        pso::PipelineStage::COMPUTE_SHADER..pso::PipelineStage::COMPUTE_SHADER,
+                        m::Dependencies::empty(),
+                        &[dx_barrier, dy_barrier, dz_barrier],
+                    );
+
+                    cmd_buffer.bind_compute_pipeline(&fft.col_pass);
+                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[0..1], &[]);
+                    cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
+                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[1..2], &[]);
+                    cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
+                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[2..3], &[]);
+                    cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
+
+                    let dx_barrier = m::Barrier::Buffer {
+                        states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
+                            ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        target: &dx_spec,
+                        families: None,
+                        range: None..None,
+                    };
+                    let dy_barrier = m::Barrier::Buffer {
+                        states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
+                            ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        target: &dy_spec,
+                        families: None,
+                        range: None..None,
+                    };
+                    let dz_barrier = m::Barrier::Buffer {
+                        states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
+                            ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        target: &dz_spec,
+                        families: None,
+                        range: None..None,
+                    };
+                    let image_barrier = m::Barrier::Image {
+                        states: (
+                            i::Access::SHADER_READ | i::Access::SHADER_WRITE,
+                            i::Layout::General,
+                        )
+                            ..(
+                                i::Access::SHADER_READ | i::Access::SHADER_WRITE,
+                                i::Layout::General,
+                            ),
+                        target: &displacement_map,
+                        families: None,
+                        range: COLOR_RANGE,
+                    };
+                    cmd_buffer.pipeline_barrier(
+                        pso::PipelineStage::VERTEX_SHADER | pso::PipelineStage::COMPUTE_SHADER
+                            ..pso::PipelineStage::COMPUTE_SHADER,
+                        m::Dependencies::empty(),
+                        &[dx_barrier, dy_barrier, dz_barrier, image_barrier],
+                    );
+
+                    cmd_buffer.bind_compute_pipeline(&correction.pipeline);
+                    cmd_buffer.bind_compute_descriptor_sets(
+                        &correction.layout,
+                        0,
+                        Some(&correction.desc_set),
+                        &[],
+                    );
+                    cmd_buffer.dispatch([RESOLUTION as u32, RESOLUTION as u32, 1]);
+
+                    let image_barrier = m::Barrier::Image {
+                        states: (
+                            i::Access::SHADER_READ | i::Access::SHADER_WRITE,
+                            i::Layout::General,
+                        )
+                            ..(
+                                i::Access::SHADER_READ | i::Access::SHADER_WRITE,
+                                i::Layout::General,
+                            ),
+                        target: &displacement_map,
+                        families: None,
+                        range: COLOR_RANGE,
+                    };
+                    cmd_buffer.pipeline_barrier(
+                        pso::PipelineStage::COMPUTE_SHADER
+                            ..pso::PipelineStage::VERTEX_SHADER | pso::PipelineStage::FRAGMENT_SHADER,
+                        m::Dependencies::empty(),
+                        &[image_barrier],
+                    );
+
+                    cmd_buffer.set_viewports(0, &[viewport.clone()]);
+                    cmd_buffer.set_scissors(0, &[scissor]);
+                    cmd_buffer.bind_graphics_pipeline(&pipelines[0].as_ref().unwrap());
+                    cmd_buffer.bind_graphics_descriptor_sets(&ocean_layout, 0, Some(&desc_set), &[]);
+                    cmd_buffer
+                        .bind_vertex_buffers(0, vec![(&grid_vertex_buffer, 0), (&grid_patch_buffer, 0)]);
+                    cmd_buffer.bind_index_buffer(b::IndexBufferView {
+                        buffer: &grid_index_buffer,
+                        offset: 0,
+                        index_type: IndexType::U32,
+                    });
+
+                    {
+                        cmd_buffer.begin_render_pass(
+                            &ocean_pass,
+                            &swap_framebuffer,
+                            pso::Rect {
+                                x: 0,
+                                y: 0,
+                                w: pixel_width as _,
+                                h: pixel_height as _,
+                            },
+                            &[
+                                command::ClearValue {
+                                    color: command::ClearColor {
+                                        float32: [0.6, 0.6, 0.6, 1.0],
+                                    },
+                                },
+                                command::ClearValue {
+                                    depth_stencil: command::ClearDepthStencil {
+                                        depth: 1.0,
+                                        stencil: 0,
+                                    },
+                                },
+                            ],
+                            command::SubpassContents::Inline,
+                        );
+                        let num_indices = 6 * (HALF_RESOLUTION - 1) * (HALF_RESOLUTION - 1);
+                        cmd_buffer.draw_indexed(0..num_indices as u32, 0, 0..4);
+                        cmd_buffer.end_render_pass();
+                    }
+
+                    cmd_buffer.finish();
+
+                    let submission = hal::queue::Submission {
+                        command_buffers: Some(&*cmd_buffer),
+                        wait_semaphores: None,
+                        signal_semaphores: Some(&submission_complete_semaphores[frame_idx]),
+                    };
+                    queue_group.queues[0].submit(submission, Some(&submission_complete_fences[frame_idx]));
+
+                    queue_group.queues[0].present_surface(
+                        &mut surface,
+                        swap_image,
+                        Some(&submission_complete_semaphores[frame_idx]),
+                    ).unwrap();
+
+                    device.destroy_framebuffer(swap_framebuffer);
+
+                    frame_id += 1;
+                }
                 _ => (),
             }
-
-            let time_now = Instant::now();
-            let elapsed = time_now.duration_since(time_last).as_micros() as f32 / 1_000_000.0;
-            let current = time_now.duration_since(time_start).as_micros() as f32 / 1_000_000.0;
-            time_last = time_now;
-
-            let factor = 0.1;
-            avg_cpu_time = avg_cpu_time * (1.0 - factor) + elapsed * factor;
-            window.set_title(&format!("gfx-ocean :: {:.*} ms", 2, avg_cpu_time * 1000.0));
-
-            let (swap_image, _) = surface.acquire_image(!0).unwrap();
-            let swap_framebuffer = device
-                .create_framebuffer(
-                    &ocean_pass,
-                    vec![swap_image.borrow(), &depth_view],
-                    i::Extent {
-                        width: pixel_width as _,
-                        height: pixel_height as _,
-                        depth: 1,
-                    },
-                )
-                .unwrap();
-
-            let frame_idx = frame_id as usize % frames_in_flight;
-
-            device
-                .wait_for_fence(&submission_complete_fences[frame_idx], !0)
-                .unwrap();
-            device.reset_fence(&submission_complete_fences[frame_idx]).unwrap();
-            cmd_pools[frame_idx].reset(false);
-
-            // Rendering
-            let cmd_buffer = &mut cmd_buffers[frame_idx];
-
-            // Update view
-            camera.update(elapsed);
-            {
-                let buffer_len = std::mem::size_of::<Locals>() as u64;
-                let locals_raw = device.map_memory(&locals_memory, 0..buffer_len).unwrap();
-                let locals = Locals {
-                    a_proj: perspective.into(),
-                    a_view: camera.view().into(),
-                    a_cam_pos: camera.position().into(),
-                    _pad: [0.0; 1],
-                };
-                std::ptr::copy_nonoverlapping(
-                    &locals as *const _ as *const _,
-                    locals_raw,
-                    buffer_len as _,
-                );
-                device
-                    .flush_mapped_memory_ranges(iter::once((&locals_memory, ..)))
-                    .unwrap();
-                device.unmap_memory(&locals_memory);
-            }
-
-            {
-                let buffer_len = std::mem::size_of::<PropagateLocals>() as u64;
-                let locals_raw = device.map_memory(&propagate_locals_memory, 0..buffer_len).unwrap();
-                let locals = PropagateLocals {
-                    time: current,
-                    resolution: RESOLUTION as i32,
-                    domain_size: DOMAIN_SIZE,
-                };
-                std::ptr::copy_nonoverlapping(
-                    &locals as *const _ as *const _,
-                    locals_raw,
-                    buffer_len as _,
-                );
-                device
-                    .flush_mapped_memory_ranges(iter::once((&propagate_locals_memory, ..)))
-                    .unwrap();
-                device.unmap_memory(&propagate_locals_memory);
-            }
-
-            cmd_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
-            cmd_buffer.bind_compute_pipeline(&propagate.pipeline);
-            cmd_buffer.bind_compute_descriptor_sets(
-                &propagate.layout,
-                0,
-                Some(&propagate.desc_set),
-                &[],
-            );
-            cmd_buffer.dispatch([RESOLUTION as u32, RESOLUTION as u32, 1]);
-
-            let dx_barrier = m::Barrier::Buffer {
-                states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
-                target: &dx_spec,
-                families: None,
-                range: None..None,
-            };
-            let dy_barrier = m::Barrier::Buffer {
-                states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
-                target: &dy_spec,
-                families: None,
-                range: None..None,
-            };
-            let dz_barrier = m::Barrier::Buffer {
-                states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
-                target: &dz_spec,
-                families: None,
-                range: None..None,
-            };
-            cmd_buffer.pipeline_barrier(
-                pso::PipelineStage::COMPUTE_SHADER..pso::PipelineStage::COMPUTE_SHADER,
-                m::Dependencies::empty(),
-                &[dx_barrier, dy_barrier, dz_barrier],
-            );
-
-            cmd_buffer.bind_compute_pipeline(&fft.row_pass);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[0..1], &[]);
-            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[1..2], &[]);
-            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[2..3], &[]);
-            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
-
-            let dx_barrier = m::Barrier::Buffer {
-                states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
-                    ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
-                target: &dx_spec,
-                families: None,
-                range: None..None,
-            };
-            let dy_barrier = m::Barrier::Buffer {
-                states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
-                    ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
-                target: &dy_spec,
-                families: None,
-                range: None..None,
-            };
-            let dz_barrier = m::Barrier::Buffer {
-                states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
-                    ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
-                target: &dz_spec,
-                families: None,
-                range: None..None,
-            };
-            cmd_buffer.pipeline_barrier(
-                pso::PipelineStage::COMPUTE_SHADER..pso::PipelineStage::COMPUTE_SHADER,
-                m::Dependencies::empty(),
-                &[dx_barrier, dy_barrier, dz_barrier],
-            );
-
-            cmd_buffer.bind_compute_pipeline(&fft.col_pass);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[0..1], &[]);
-            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[1..2], &[]);
-            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
-            cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[2..3], &[]);
-            cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
-
-            let dx_barrier = m::Barrier::Buffer {
-                states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
-                    ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
-                target: &dx_spec,
-                families: None,
-                range: None..None,
-            };
-            let dy_barrier = m::Barrier::Buffer {
-                states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
-                    ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
-                target: &dy_spec,
-                families: None,
-                range: None..None,
-            };
-            let dz_barrier = m::Barrier::Buffer {
-                states: b::Access::SHADER_WRITE | b::Access::SHADER_READ
-                    ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
-                target: &dz_spec,
-                families: None,
-                range: None..None,
-            };
-            let image_barrier = m::Barrier::Image {
-                states: (
-                    i::Access::SHADER_READ | i::Access::SHADER_WRITE,
-                    i::Layout::General,
-                )
-                    ..(
-                        i::Access::SHADER_READ | i::Access::SHADER_WRITE,
-                        i::Layout::General,
-                    ),
-                target: &displacement_map,
-                families: None,
-                range: COLOR_RANGE,
-            };
-            cmd_buffer.pipeline_barrier(
-                pso::PipelineStage::VERTEX_SHADER | pso::PipelineStage::COMPUTE_SHADER
-                    ..pso::PipelineStage::COMPUTE_SHADER,
-                m::Dependencies::empty(),
-                &[dx_barrier, dy_barrier, dz_barrier, image_barrier],
-            );
-
-            cmd_buffer.bind_compute_pipeline(&correction.pipeline);
-            cmd_buffer.bind_compute_descriptor_sets(
-                &correction.layout,
-                0,
-                Some(&correction.desc_set),
-                &[],
-            );
-            cmd_buffer.dispatch([RESOLUTION as u32, RESOLUTION as u32, 1]);
-
-            let image_barrier = m::Barrier::Image {
-                states: (
-                    i::Access::SHADER_READ | i::Access::SHADER_WRITE,
-                    i::Layout::General,
-                )
-                    ..(
-                        i::Access::SHADER_READ | i::Access::SHADER_WRITE,
-                        i::Layout::General,
-                    ),
-                target: &displacement_map,
-                families: None,
-                range: COLOR_RANGE,
-            };
-            cmd_buffer.pipeline_barrier(
-                pso::PipelineStage::COMPUTE_SHADER
-                    ..pso::PipelineStage::VERTEX_SHADER | pso::PipelineStage::FRAGMENT_SHADER,
-                m::Dependencies::empty(),
-                &[image_barrier],
-            );
-
-            cmd_buffer.set_viewports(0, &[viewport.clone()]);
-            cmd_buffer.set_scissors(0, &[scissor]);
-            cmd_buffer.bind_graphics_pipeline(&pipelines[0].as_ref().unwrap());
-            cmd_buffer.bind_graphics_descriptor_sets(&ocean_layout, 0, Some(&desc_set), &[]);
-            cmd_buffer
-                .bind_vertex_buffers(0, vec![(&grid_vertex_buffer, 0), (&grid_patch_buffer, 0)]);
-            cmd_buffer.bind_index_buffer(b::IndexBufferView {
-                buffer: &grid_index_buffer,
-                offset: 0,
-                index_type: IndexType::U32,
-            });
-
-            {
-                cmd_buffer.begin_render_pass(
-                    &ocean_pass,
-                    &swap_framebuffer,
-                    pso::Rect {
-                        x: 0,
-                        y: 0,
-                        w: pixel_width as _,
-                        h: pixel_height as _,
-                    },
-                    &[
-                        command::ClearValue {
-                            color: command::ClearColor {
-                                float32: [0.6, 0.6, 0.6, 1.0],
-                            },
-                        },
-                        command::ClearValue {
-                            depth_stencil: command::ClearDepthStencil {
-                                depth: 1.0,
-                                stencil: 0,
-                            },
-                        },
-                    ],
-                    command::SubpassContents::Inline,
-                );
-                let num_indices = 6 * (HALF_RESOLUTION - 1) * (HALF_RESOLUTION - 1);
-                cmd_buffer.draw_indexed(0..num_indices as u32, 0, 0..4);
-                cmd_buffer.end_render_pass();
-            }
-
-            cmd_buffer.finish();
-
-            let submission = hal::queue::Submission {
-                command_buffers: Some(&*cmd_buffer),
-                wait_semaphores: None,
-                signal_semaphores: Some(&submission_complete_semaphores[frame_idx]),
-            };
-            queue_group.queues[0].submit(submission, Some(&submission_complete_fences[frame_idx]));
-
-            queue_group.queues[0].present_surface(
-                &mut surface,
-                swap_image,
-                Some(&submission_complete_semaphores[frame_idx]),
-            ).unwrap();
-
-            device.destroy_framebuffer(swap_framebuffer);
-
-            frame_id += 1;
-
         });
 
         device.wait_idle()?;
