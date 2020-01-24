@@ -33,7 +33,9 @@ use gfx_hal::{
     IndexType, Instance,
 };
 
-use winit::dpi::PhysicalSize;
+use winit::dpi::{Size, LogicalSize, PhysicalSize};
+use winit::event::WindowEvent;
+use winit::event_loop::ControlFlow;
 
 #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
 use ocean::{CorrectionLocals, PropagateLocals};
@@ -94,9 +96,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         env_logger::init().unwrap();
 
-        let mut events_loop = winit::EventsLoop::new();
-        let wb = winit::WindowBuilder::new()
-            .with_dimensions((1200, 800).into())
+        let events_loop = winit::event_loop::EventLoop::new();
+        let wb = winit::window::WindowBuilder::new()
+            .with_inner_size(Size::Logical(LogicalSize { width: 1200.0, height: 700.0 }))
             .with_title("ocean".to_string());
         let window = wb.build(&events_loop).unwrap();
 
@@ -104,9 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             width: pixel_width,
             height: pixel_height,
         } = window
-            .get_inner_size()
-            .unwrap()
-            .to_physical(window.get_hidpi_factor());
+            .inner_size();
 
         let mut camera = camera::Camera::new(
             glm::vec3(-110.0, 150.0, 200.0),
@@ -1086,29 +1086,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let time_start = Instant::now();
         let mut time_last = time_start;
 
-        let mut running = true;
         let mut frame_id = 0;
         let mut avg_cpu_time = 0.0;
 
-        while running {
-            events_loop.poll_events(|event| match event {
-                winit::Event::WindowEvent { event, .. } => match event {
-                    winit::WindowEvent::KeyboardInput {
+        events_loop.run(move |event, _, control_flow| {
+            *control_flow = ControlFlow::Poll;
+
+            match event {
+                winit::event::Event::WindowEvent { event, .. } => match event {
+                    WindowEvent::KeyboardInput {
                         input:
-                            winit::KeyboardInput {
-                                virtual_keycode: Some(winit::VirtualKeyCode::Escape),
+                            winit::event::KeyboardInput {
+                                virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
                                 ..
                             },
                         ..
                     }
-                    | winit::WindowEvent::CloseRequested => running = false,
-                    winit::WindowEvent::KeyboardInput { input, .. } => {
+                    | WindowEvent::CloseRequested => {
+                        *control_flow = ControlFlow::Exit;
+                        return
+                    }
+                    WindowEvent::KeyboardInput { input, .. } => {
                         camera.handle_event(input);
                     }
                     _ => (),
                 },
                 _ => (),
-            });
+            }
 
             let time_now = Instant::now();
             let elapsed = time_now.duration_since(time_last).as_micros() as f32 / 1_000_000.0;
@@ -1119,7 +1123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             avg_cpu_time = avg_cpu_time * (1.0 - factor) + elapsed * factor;
             window.set_title(&format!("gfx-ocean :: {:.*} ms", 2, avg_cpu_time * 1000.0));
 
-            let (swap_image, _) = surface.acquire_image(!0)?;
+            let (swap_image, _) = surface.acquire_image(!0).unwrap();
             let swap_framebuffer = device
                 .create_framebuffer(
                     &ocean_pass,
@@ -1137,7 +1141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             device
                 .wait_for_fence(&submission_complete_fences[frame_idx], !0)
                 .unwrap();
-            device.reset_fence(&submission_complete_fences[frame_idx])?;
+            device.reset_fence(&submission_complete_fences[frame_idx]).unwrap();
             cmd_pools[frame_idx].reset(false);
 
             // Rendering
@@ -1147,7 +1151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             camera.update(elapsed);
             {
                 let buffer_len = std::mem::size_of::<Locals>() as u64;
-                let locals_raw = device.map_memory(&locals_memory, 0..buffer_len)?;
+                let locals_raw = device.map_memory(&locals_memory, 0..buffer_len).unwrap();
                 let locals = Locals {
                     a_proj: perspective.into(),
                     a_view: camera.view().into(),
@@ -1167,7 +1171,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             {
                 let buffer_len = std::mem::size_of::<PropagateLocals>() as u64;
-                let locals_raw = device.map_memory(&propagate_locals_memory, 0..buffer_len)?;
+                let locals_raw = device.map_memory(&propagate_locals_memory, 0..buffer_len).unwrap();
                 let locals = PropagateLocals {
                     time: current,
                     resolution: RESOLUTION as i32,
@@ -1386,12 +1390,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut surface,
                 swap_image,
                 Some(&submission_complete_semaphores[frame_idx]),
-            )?;
+            ).unwrap();
 
             device.destroy_framebuffer(swap_framebuffer);
 
             frame_id += 1;
-        }
+
+        });
 
         device.wait_idle()?;
 
@@ -1432,8 +1437,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        surface
-              .unconfigure_swapchain(&device);
+        surface.unconfigure_swapchain(&device);
 
         Ok(())
     }
