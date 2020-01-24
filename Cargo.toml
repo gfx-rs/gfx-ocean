@@ -23,7 +23,7 @@ bincode = "1.1"
 smallvec = "0.6" # gfx-hal version :/
 
 gfx-hal = "0.4"
-gfx-backend-vulkan = { version = "0.4", optional = true }
+gfx-backend-vulkan = { version = "0.4", features = ["x11", "xcb"], optional = true }
 [target.'cfg(windows)'.dependencies]
 gfx-backend-dx12 = { version = "0.4", optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
