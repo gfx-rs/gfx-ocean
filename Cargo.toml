@@ -20,10 +20,11 @@ winit = "0.19"
 nalgebra-glm = "0.4"
 glsl-to-spirv = "0.1"
 bincode = "1.1"
+smallvec = "0.6" # gfx-hal version :/
 
-gfx-hal = "0.3"
-gfx-backend-vulkan = { version = "0.3", optional = true, features = ["winit"] }
+gfx-hal = "0.4"
+gfx-backend-vulkan = { version = "0.4", optional = true }
 [target.'cfg(windows)'.dependencies]
-gfx-backend-dx12 = { version = "0.3", optional = true, features = ["winit"] }
+gfx-backend-dx12 = { version = "0.4", optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
-gfx-backend-metal = { version = "0.3", optional = true, features = ["winit"] }
+gfx-backend-metal = { version = "0.4", optional = true}

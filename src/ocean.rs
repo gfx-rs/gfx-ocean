@@ -1,6 +1,7 @@
-use crate::hal::{pso, Backend, DescriptorPool, Device};
 use crate::back::Backend as B;
+use crate::hal::{pso, Backend};
 use crate::translate_shader;
+use gfx_hal::{device::Device, pso::DescriptorPool};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PropagateLocals {
@@ -19,55 +20,64 @@ pub struct Propagation {
 }
 
 impl Propagation {
-    pub unsafe fn init(device: &mut <B as Backend>::Device) -> Result<Self, ()> {
-        let cs_propagate = device
-            .create_shader_module(
-                &translate_shader(
-                    include_str!("../shader/propagate.comp"),
-                    pso::Stage::Compute,
-                )
-                .unwrap(),
-            ).map_err(|_| ())?;
+    pub unsafe fn init(
+        device: &<B as Backend>::Device,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let cs_propagate = device.create_shader_module(
+            &translate_shader(
+                include_str!("../shader/propagate.comp"),
+                pso::Stage::Compute,
+            )
+            .unwrap(),
+        )?;
 
-        let set_layout = device.create_descriptor_set_layout(&[
-            pso::DescriptorSetLayoutBinding {
-                binding: 0,
-                ty: pso::DescriptorType::UniformBuffer,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
-            },
-            pso::DescriptorSetLayoutBinding {
-                binding: 1,
-                ty: pso::DescriptorType::StorageBuffer,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
-            },
-            pso::DescriptorSetLayoutBinding {
-                binding: 2,
-                ty: pso::DescriptorType::StorageBuffer,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
-            },
-            pso::DescriptorSetLayoutBinding {
-                binding: 3,
-                ty: pso::DescriptorType::StorageBuffer,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
-            },
-            pso::DescriptorSetLayoutBinding {
-                binding: 4,
-                ty: pso::DescriptorType::StorageBuffer,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
-            },
-            pso::DescriptorSetLayoutBinding {
-                binding: 5,
-                ty: pso::DescriptorType::StorageBuffer,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
-            },
-        ], &[])
-        .map_err(|_| ())?;
+        let set_layout = device.create_descriptor_set_layout(
+            &[
+                pso::DescriptorSetLayoutBinding {
+                    binding: 0,
+                    ty: pso::DescriptorType::UniformBuffer,
+                    count: 1,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
+                    immutable_samplers: false,
+                },
+                pso::DescriptorSetLayoutBinding {
+                    binding: 1,
+                    ty: pso::DescriptorType::StorageBuffer,
+                    count: 1,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
+                    immutable_samplers: false,
+                },
+                pso::DescriptorSetLayoutBinding {
+                    binding: 2,
+                    ty: pso::DescriptorType::StorageBuffer,
+                    count: 1,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
+                    immutable_samplers: false,
+                },
+                pso::DescriptorSetLayoutBinding {
+                    binding: 3,
+                    ty: pso::DescriptorType::StorageBuffer,
+                    count: 1,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
+                    immutable_samplers: false,
+                },
+                pso::DescriptorSetLayoutBinding {
+                    binding: 4,
+                    ty: pso::DescriptorType::StorageBuffer,
+                    count: 1,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
+                    immutable_samplers: false,
+                },
+                pso::DescriptorSetLayoutBinding {
+                    binding: 5,
+                    ty: pso::DescriptorType::StorageBuffer,
+                    count: 1,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
+                    immutable_samplers: false,
+                },
+            ],
+            &[],
+        )?;
 
         let mut pool = device.create_descriptor_pool(
             1, // sets
@@ -82,21 +92,22 @@ impl Propagation {
                 },
             ],
             pso::DescriptorPoolCreateFlags::empty(),
-        ).map_err(|_| ())?;
+        )?;
 
-        let desc_set = pool.allocate_set(&set_layout)
-            .map_err(|_| ())?;
-        let layout = device.create_pipeline_layout(Some(&set_layout), &[])
-            .map_err(|_| ())?;
+        let desc_set = pool.allocate_set(&set_layout)?;
+        let layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
         let pipeline = {
-            let mut pipelines = device.create_compute_pipelines(&[pso::ComputePipelineDesc::new(
-                pso::EntryPoint {
-                    entry: "main",
-                    module: &cs_propagate,
-                    specialization: pso::Specialization::default(),
-                },
-                &layout,
-            )], None);
+            let mut pipelines = device.create_compute_pipelines(
+                &[pso::ComputePipelineDesc::new(
+                    pso::EntryPoint {
+                        entry: "main",
+                        module: &cs_propagate,
+                        specialization: pso::Specialization::default(),
+                    },
+                    &layout,
+                )],
+                None,
+            );
 
             pipelines.remove(0).unwrap()
         };
@@ -111,7 +122,7 @@ impl Propagation {
         })
     }
 
-    pub unsafe fn destroy(self, device: &mut <B as Backend>::Device) {
+    pub unsafe fn destroy(self, device: &<B as Backend>::Device) {
         device.destroy_shader_module(self.cs_propagate);
         device.destroy_descriptor_set_layout(self.set_layout);
         device.destroy_pipeline_layout(self.layout);
@@ -134,7 +145,9 @@ pub struct Correction {
 }
 
 impl Correction {
-    pub unsafe fn init(device: &mut <B as Backend>::Device) -> Result<Self, ()> {
+    pub unsafe fn init(
+        device: &<B as Backend>::Device,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let cs_correct = device
             .create_shader_module(
                 &translate_shader(
@@ -145,40 +158,46 @@ impl Correction {
             )
             .unwrap();
 
-        let set_layout = device.create_descriptor_set_layout(&[
-            pso::DescriptorSetLayoutBinding {
-                binding: 0,
-                ty: pso::DescriptorType::UniformBuffer,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,
-                immutable_samplers: false,
-            },
-            pso::DescriptorSetLayoutBinding {
-                binding: 1,
-                ty: pso::DescriptorType::StorageBuffer,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
-            },
-            pso::DescriptorSetLayoutBinding {
-                binding: 2,
-                ty: pso::DescriptorType::StorageBuffer,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
-            },
-            pso::DescriptorSetLayoutBinding {
-                binding: 3,
-                ty: pso::DescriptorType::StorageBuffer,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
-            },
-            pso::DescriptorSetLayoutBinding {
-                binding: 4,
-                ty: pso::DescriptorType::StorageImage,
-                count: 1,
-                stage_flags: pso::ShaderStageFlags::COMPUTE,immutable_samplers: false,
-            },
-        ], &[])
-        .map_err(|_| ())?;
+        let set_layout = device.create_descriptor_set_layout(
+            &[
+                pso::DescriptorSetLayoutBinding {
+                    binding: 0,
+                    ty: pso::DescriptorType::UniformBuffer,
+                    count: 1,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
+                    immutable_samplers: false,
+                },
+                pso::DescriptorSetLayoutBinding {
+                    binding: 1,
+                    ty: pso::DescriptorType::StorageBuffer,
+                    count: 1,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
+                    immutable_samplers: false,
+                },
+                pso::DescriptorSetLayoutBinding {
+                    binding: 2,
+                    ty: pso::DescriptorType::StorageBuffer,
+                    count: 1,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
+                    immutable_samplers: false,
+                },
+                pso::DescriptorSetLayoutBinding {
+                    binding: 3,
+                    ty: pso::DescriptorType::StorageBuffer,
+                    count: 1,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
+                    immutable_samplers: false,
+                },
+                pso::DescriptorSetLayoutBinding {
+                    binding: 4,
+                    ty: pso::DescriptorType::StorageImage,
+                    count: 1,
+                    stage_flags: pso::ShaderStageFlags::COMPUTE,
+                    immutable_samplers: false,
+                },
+            ],
+            &[],
+        )?;
 
         let mut pool = device.create_descriptor_pool(
             1, // sets
@@ -196,23 +215,23 @@ impl Correction {
                     count: 1,
                 },
             ],
-            pso::DescriptorPoolCreateFlags::empty()
-        )
-        .map_err(|_| ())?;
+            pso::DescriptorPoolCreateFlags::empty(),
+        )?;
 
-        let desc_set = pool.allocate_set(&set_layout)
-            .map_err(|_| ())?;
-        let layout = device.create_pipeline_layout(Some(&set_layout), &[])
-            .map_err(|_| ())?;
+        let desc_set = pool.allocate_set(&set_layout)?;
+        let layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
         let pipeline = {
-            let mut pipelines = device.create_compute_pipelines(&[pso::ComputePipelineDesc::new(
-                pso::EntryPoint {
-                    entry: "main",
-                    module: &cs_correct,
-                    specialization: pso::Specialization::default(),
-                },
-                &layout,
-            )], None);
+            let mut pipelines = device.create_compute_pipelines(
+                &[pso::ComputePipelineDesc::new(
+                    pso::EntryPoint {
+                        entry: "main",
+                        module: &cs_correct,
+                        specialization: pso::Specialization::default(),
+                    },
+                    &layout,
+                )],
+                None,
+            );
 
             pipelines.remove(0).unwrap()
         };
@@ -227,7 +246,7 @@ impl Correction {
         })
     }
 
-    pub unsafe fn destroy(self, device: &mut <B as Backend>::Device) {
+    pub unsafe fn destroy(self, device: &<B as Backend>::Device) {
         device.destroy_shader_module(self.cs_correct);
         device.destroy_descriptor_set_layout(self.set_layout);
         device.destroy_pipeline_layout(self.layout);
