@@ -1,7 +1,6 @@
 use crate::back::Backend as B;
-use crate::hal::{pso, Backend};
 use crate::translate_shader;
-use gfx_hal::{device::Device, pso::DescriptorPool};
+use gfx_hal::{device::Device, pso::{self, DescriptorPool as _}, Backend};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PropagateLocals {
@@ -35,42 +34,60 @@ impl Propagation {
             &[
                 pso::DescriptorSetLayoutBinding {
                     binding: 0,
-                    ty: pso::DescriptorType::UniformBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Uniform,
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 1,
-                    ty: pso::DescriptorType::StorageBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Storage { read_only: true },
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 2,
-                    ty: pso::DescriptorType::StorageBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Storage { read_only: true },
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 3,
-                    ty: pso::DescriptorType::StorageBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Storage { read_only: false },
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 4,
-                    ty: pso::DescriptorType::StorageBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Storage { read_only: false },
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 5,
-                    ty: pso::DescriptorType::StorageBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Storage { read_only: false },
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
@@ -83,12 +100,25 @@ impl Propagation {
             1, // sets
             &[
                 pso::DescriptorRangeDesc {
-                    ty: pso::DescriptorType::UniformBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Uniform,
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                 },
                 pso::DescriptorRangeDesc {
-                    ty: pso::DescriptorType::StorageBuffer,
-                    count: 5,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Storage { read_only: true },
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
+                    count: 2,
+                },
+                pso::DescriptorRangeDesc {
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Storage { read_only: false },
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
+                    count: 3,
                 },
             ],
             pso::DescriptorPoolCreateFlags::empty(),
@@ -162,35 +192,49 @@ impl Correction {
             &[
                 pso::DescriptorSetLayoutBinding {
                     binding: 0,
-                    ty: pso::DescriptorType::UniformBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Uniform,
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 1,
-                    ty: pso::DescriptorType::StorageBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Storage { read_only: true },
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 2,
-                    ty: pso::DescriptorType::StorageBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Storage { read_only: true },
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 3,
-                    ty: pso::DescriptorType::StorageBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Storage { read_only: true },
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
                 },
                 pso::DescriptorSetLayoutBinding {
                     binding: 4,
-                    ty: pso::DescriptorType::StorageImage,
+                    ty: pso::DescriptorType::Image {
+                        ty: pso::ImageDescriptorType::Storage { read_only: false },
+                    },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
@@ -203,15 +247,23 @@ impl Correction {
             1, // sets
             &[
                 pso::DescriptorRangeDesc {
-                    ty: pso::DescriptorType::UniformBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Uniform,
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 1,
                 },
                 pso::DescriptorRangeDesc {
-                    ty: pso::DescriptorType::StorageBuffer,
+                    ty: pso::DescriptorType::Buffer {
+                        ty: pso::BufferDescriptorType::Storage { read_only: true },
+                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    },
                     count: 3,
                 },
                 pso::DescriptorRangeDesc {
-                    ty: pso::DescriptorType::StorageImage,
+                    ty: pso::DescriptorType::Image {
+                        ty: pso::ImageDescriptorType::Storage { read_only: false },
+                    },
                     count: 1,
                 },
             ],
