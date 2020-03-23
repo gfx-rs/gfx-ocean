@@ -1,6 +1,10 @@
 use crate::back::Backend as B;
 use crate::translate_shader;
-use gfx_hal::{device::Device, pso, pso::DescriptorPool, Backend};
+use gfx_hal::{
+    device::Device as _,
+    pso::{self, DescriptorPool as _},
+    Backend,
+};
 
 pub struct Fft {
     pub cs_fft_row: <B as Backend>::ShaderModule,
@@ -33,7 +37,10 @@ impl Fft {
         let set_layout = device.create_descriptor_set_layout(
             &[pso::DescriptorSetLayoutBinding {
                 binding: 0,
-                ty: pso::DescriptorType::StorageBuffer,
+                ty: pso::DescriptorType::Buffer {
+                    ty: pso::BufferDescriptorType::Storage { read_only: false },
+                    format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                },
                 count: 1,
                 stage_flags: pso::ShaderStageFlags::COMPUTE,
                 immutable_samplers: false,
@@ -44,14 +51,17 @@ impl Fft {
         let mut pool = device.create_descriptor_pool(
             3,
             &[pso::DescriptorRangeDesc {
-                ty: pso::DescriptorType::StorageBuffer,
+                ty: pso::DescriptorType::Buffer {
+                    ty: pso::BufferDescriptorType::Storage { read_only: false },
+                    format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                },
                 count: 3,
             }],
             pso::DescriptorPoolCreateFlags::empty(),
         )?;
 
-        let mut desc_sets = smallvec::SmallVec::new();
-        pool.allocate_sets(vec![&set_layout, &set_layout, &set_layout], &mut desc_sets)?;
+        let mut desc_sets = Vec::<<B as Backend>::DescriptorSet>::with_capacity(3);
+        pool.allocate(vec![&set_layout, &set_layout, &set_layout], &mut desc_sets)?;
         let layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
         let (row_pass, col_pass) = {
             let mut pipelines = device.create_compute_pipelines(
@@ -87,7 +97,7 @@ impl Fft {
             set_layout,
             pool,
             layout,
-            desc_sets: desc_sets.into_vec(),
+            desc_sets,
             row_pass,
             col_pass,
         })
