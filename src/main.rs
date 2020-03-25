@@ -20,18 +20,15 @@ use gfx_hal::{
     command::{self, CommandBuffer as _},
     device::Device,
     format::{self as f, ChannelType, Format, Swizzle},
-    image as i,
-    memory as m,
-    pass,
+    image as i, memory as m, pass,
     pool::{self, CommandPool as _},
     pso::{self, DescriptorPool as _},
     queue::{CommandQueue as _, QueueFamily},
     window::{Extent2D, PresentationSurface as _, Surface as _},
-    IndexType,
-    Instance,
+    IndexType, Instance,
 };
 
-use winit::dpi::{Size, LogicalSize, PhysicalSize};
+use winit::dpi::{LogicalSize, PhysicalSize, Size};
 use winit::event::WindowEvent;
 use winit::event_loop::ControlFlow;
 
@@ -74,21 +71,6 @@ const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
     layers: 0..1,
 };
 
-fn translate_shader(code: &str, stage: pso::Stage) -> Result<Vec<u32>, String> {
-    use glsl_to_spirv::{compile, ShaderType};
-
-    let ty = match stage {
-        pso::Stage::Vertex => ShaderType::Vertex,
-        pso::Stage::Fragment => ShaderType::Fragment,
-        pso::Stage::Geometry => ShaderType::Geometry,
-        pso::Stage::Hull => ShaderType::TessellationControl,
-        pso::Stage::Domain => ShaderType::TessellationEvaluation,
-        pso::Stage::Compute => ShaderType::Compute,
-    };
-
-    compile(code, ty).map(|out| pso::read_spirv(out).unwrap())
-}
-
 #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
@@ -96,19 +78,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let events_loop = winit::event_loop::EventLoop::new();
         let wb = winit::window::WindowBuilder::new()
-            .with_inner_size(Size::Logical(LogicalSize { width: 1200.0, height: 700.0 }))
+            .with_inner_size(Size::Logical(LogicalSize {
+                width: 1200.0,
+                height: 700.0,
+            }))
             .with_title("ocean".to_string());
         let window = wb.build(&events_loop).unwrap();
 
         let PhysicalSize {
             width: pixel_width,
             height: pixel_height,
-        } = window
-            .inner_size();
+        } = window.inner_size();
 
         let mut camera = camera::Camera::new(
-            glm::vec3(-110.0, 150.0, 200.0),
-            glm::vec3(-1.28, -0.44, 0.0),
+            glm::vec3(-8.0, 32.0, 120.0),
+            glm::vec3(-0.6, -1.5707, 0.0),
         );
 
         let perspective: [[f32; 4]; 4] = {
@@ -151,7 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut general_pool = device
             .create_command_pool(queue_group.family, pool::CommandPoolCreateFlags::empty())?;
 
-        let mut swap_config = hal::window::SwapchainConfig::from_caps(
+        let swap_config = hal::window::SwapchainConfig::from_caps(
             &caps,
             surface_format,
             Extent2D {
@@ -159,8 +143,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 height: pixel_height as _,
             },
         );
-        swap_config.present_mode = hal::window::PresentMode::IMMEDIATE; // disable vsync
-
         surface.configure_swapchain(&device, swap_config)?;
 
         let frames_in_flight = 3;
@@ -231,23 +213,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         let vs_ocean = {
-            let mut file = fs::File::open("shader/ocean.vert").unwrap();
-            let mut shader = String::new();
-            file.read_to_string(&mut shader)?;
-
-            device
-                .create_shader_module(&translate_shader(&shader, pso::Stage::Vertex).unwrap())
-                .unwrap()
+            let file = fs::File::open("shader/spv/ocean.vert.spv")?;
+            device.create_shader_module(&pso::read_spirv(&file)?)?
         };
 
         let fs_ocean = {
-            let mut file = fs::File::open("shader/ocean.frag").unwrap();
-            let mut shader = String::new();
-            file.read_to_string(&mut shader)?;
-
-            device
-                .create_shader_module(&translate_shader(&shader, pso::Stage::Fragment).unwrap())
-                .unwrap()
+            let file = fs::File::open("shader/spv/ocean.frag.spv")?;
+            device.create_shader_module(&pso::read_spirv(&file)?)?
         };
 
         let fft = fft::Fft::init(&device)?;
@@ -260,7 +232,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     binding: 0,
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Uniform,
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::VERTEX | pso::ShaderStageFlags::FRAGMENT,
@@ -269,7 +243,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 pso::DescriptorSetLayoutBinding {
                     binding: 1,
                     ty: pso::DescriptorType::Image {
-                        ty: pso::ImageDescriptorType::Sampled { with_sampler: false },
+                        ty: pso::ImageDescriptorType::Sampled {
+                            with_sampler: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::VERTEX | pso::ShaderStageFlags::FRAGMENT,
@@ -416,13 +392,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 pso::DescriptorRangeDesc {
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Uniform,
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                 },
                 pso::DescriptorRangeDesc {
                     ty: pso::DescriptorType::Image {
-                        ty: pso::ImageDescriptorType::Sampled { with_sampler: false },
+                        ty: pso::ImageDescriptorType::Sampled {
+                            with_sampler: false,
+                        },
                     },
                     count: 1,
                 },
@@ -752,9 +732,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             h: pixel_height as _,
         };
 
-        let spectrum_len = RESOLUTION * RESOLUTION * 2 * std::mem::size_of::<f32>();
-        let omega_len = RESOLUTION * RESOLUTION * std::mem::size_of::<f32>();
-
         // Upload initial data
         let (omega_staging_buffer, omega_staging_memory) = {
             let buffer_stride = std::mem::size_of::<f32>() as u64;
@@ -966,46 +943,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 set: &propagate.desc_set,
                 binding: 1,
                 array_offset: 0,
-                descriptors: Some(pso::Descriptor::Buffer(
-                    &initial_spec,
-                    b::SubRange::WHOLE,
-                )),
+                descriptors: Some(pso::Descriptor::Buffer(&initial_spec, b::SubRange::WHOLE)),
             },
             pso::DescriptorSetWrite {
                 set: &propagate.desc_set,
                 binding: 2,
                 array_offset: 0,
-                descriptors: Some(pso::Descriptor::Buffer(
-                    &omega_buffer,
-                    b::SubRange::WHOLE,
-                )),
+                descriptors: Some(pso::Descriptor::Buffer(&omega_buffer, b::SubRange::WHOLE)),
             },
             pso::DescriptorSetWrite {
                 set: &propagate.desc_set,
                 binding: 3,
                 array_offset: 0,
-                descriptors: Some(pso::Descriptor::Buffer(
-                    &dy_spec,
-                    b::SubRange::WHOLE,
-                )),
+                descriptors: Some(pso::Descriptor::Buffer(&dy_spec, b::SubRange::WHOLE)),
             },
             pso::DescriptorSetWrite {
                 set: &propagate.desc_set,
                 binding: 4,
                 array_offset: 0,
-                descriptors: Some(pso::Descriptor::Buffer(
-                    &dx_spec,
-                    b::SubRange::WHOLE,
-                )),
+                descriptors: Some(pso::Descriptor::Buffer(&dx_spec, b::SubRange::WHOLE)),
             },
             pso::DescriptorSetWrite {
                 set: &propagate.desc_set,
                 binding: 5,
                 array_offset: 0,
-                descriptors: Some(pso::Descriptor::Buffer(
-                    &dz_spec,
-                    b::SubRange::WHOLE,
-                )),
+                descriptors: Some(pso::Descriptor::Buffer(&dz_spec, b::SubRange::WHOLE)),
             },
         ]);
 
@@ -1023,28 +985,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 set: &correction.desc_set,
                 binding: 1,
                 array_offset: 0,
-                descriptors: Some(pso::Descriptor::Buffer(
-                    &dy_spec,
-                    b::SubRange::WHOLE,
-                )),
+                descriptors: Some(pso::Descriptor::Buffer(&dy_spec, b::SubRange::WHOLE)),
             },
             pso::DescriptorSetWrite {
                 set: &correction.desc_set,
                 binding: 2,
                 array_offset: 0,
-                descriptors: Some(pso::Descriptor::Buffer(
-                    &dx_spec,
-                    b::SubRange::WHOLE,
-                )),
+                descriptors: Some(pso::Descriptor::Buffer(&dx_spec, b::SubRange::WHOLE)),
             },
             pso::DescriptorSetWrite {
                 set: &correction.desc_set,
                 binding: 3,
                 array_offset: 0,
-                descriptors: Some(pso::Descriptor::Buffer(
-                    &dz_spec,
-                    b::SubRange::WHOLE,
-                )),
+                descriptors: Some(pso::Descriptor::Buffer(&dz_spec, b::SubRange::WHOLE)),
             },
             pso::DescriptorSetWrite {
                 set: &correction.desc_set,
@@ -1062,28 +1015,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 set: &fft.desc_sets[0],
                 binding: 0,
                 array_offset: 0,
-                descriptors: Some(pso::Descriptor::Buffer(
-                    &dx_spec,
-                    b::SubRange::WHOLE,
-                )),
+                descriptors: Some(pso::Descriptor::Buffer(&dx_spec, b::SubRange::WHOLE)),
             },
             pso::DescriptorSetWrite {
                 set: &fft.desc_sets[1],
                 binding: 0,
                 array_offset: 0,
-                descriptors: Some(pso::Descriptor::Buffer(
-                    &dy_spec,
-                    b::SubRange::WHOLE,
-                )),
+                descriptors: Some(pso::Descriptor::Buffer(&dy_spec, b::SubRange::WHOLE)),
             },
             pso::DescriptorSetWrite {
                 set: &fft.desc_sets[2],
                 binding: 0,
                 array_offset: 0,
-                descriptors: Some(pso::Descriptor::Buffer(
-                    &dz_spec,
-                    b::SubRange::WHOLE,
-                )),
+                descriptors: Some(pso::Descriptor::Buffer(&dz_spec, b::SubRange::WHOLE)),
             },
         ]);
 
@@ -1108,7 +1052,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     | WindowEvent::CloseRequested => {
                         *control_flow = ControlFlow::Exit;
-                        return
+                        return;
                     }
                     WindowEvent::KeyboardInput { input, .. } => {
                         camera.handle_event(input);
@@ -1117,11 +1061,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 winit::event::Event::MainEventsCleared => {
                     window.request_redraw();
-                },
+                }
                 winit::event::Event::RedrawRequested(_) => {
                     let time_now = Instant::now();
-                    let elapsed = time_now.duration_since(time_last).as_micros() as f32 / 1_000_000.0;
-                    let current = time_now.duration_since(time_start).as_micros() as f32 / 1_000_000.0;
+                    let elapsed =
+                        time_now.duration_since(time_last).as_micros() as f32 / 1_000_000.0;
+                    let current =
+                        time_now.duration_since(time_start).as_micros() as f32 / 1_000_000.0;
                     time_last = time_now;
 
                     let factor = 0.1;
@@ -1146,7 +1092,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     device
                         .wait_for_fence(&submission_complete_fences[frame_idx], !0)
                         .unwrap();
-                    device.reset_fence(&submission_complete_fences[frame_idx]).unwrap();
+                    device
+                        .reset_fence(&submission_complete_fences[frame_idx])
+                        .unwrap();
                     cmd_pools[frame_idx].reset(false);
 
                     // Rendering
@@ -1156,7 +1104,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     camera.update(elapsed);
                     {
                         let buffer_len = std::mem::size_of::<Locals>() as u64;
-                        let locals_raw = device.map_memory(&locals_memory, m::Segment::ALL).unwrap();
+                        let locals_raw =
+                            device.map_memory(&locals_memory, m::Segment::ALL).unwrap();
                         let locals = Locals {
                             a_proj: perspective.into(),
                             a_view: camera.view().into(),
@@ -1169,14 +1118,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             buffer_len as _,
                         );
                         device
-                            .flush_mapped_memory_ranges(iter::once((&locals_memory, m::Segment::ALL)))
+                            .flush_mapped_memory_ranges(iter::once((
+                                &locals_memory,
+                                m::Segment::ALL,
+                            )))
                             .unwrap();
                         device.unmap_memory(&locals_memory);
                     }
 
                     {
                         let buffer_len = std::mem::size_of::<PropagateLocals>() as u64;
-                        let locals_raw = device.map_memory(&propagate_locals_memory, m::Segment::ALL).unwrap();
+                        let locals_raw = device
+                            .map_memory(&propagate_locals_memory, m::Segment::ALL)
+                            .unwrap();
                         let locals = PropagateLocals {
                             time: current,
                             resolution: RESOLUTION as i32,
@@ -1188,7 +1142,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             buffer_len as _,
                         );
                         device
-                            .flush_mapped_memory_ranges(iter::once((&propagate_locals_memory, m::Segment::ALL)))
+                            .flush_mapped_memory_ranges(iter::once((
+                                &propagate_locals_memory,
+                                m::Segment::ALL,
+                            )))
                             .unwrap();
                         device.unmap_memory(&propagate_locals_memory);
                     }
@@ -1204,19 +1161,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cmd_buffer.dispatch([RESOLUTION as u32, RESOLUTION as u32, 1]);
 
                     let dx_barrier = m::Barrier::Buffer {
-                        states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        states: b::Access::SHADER_WRITE
+                            ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
                         target: &dx_spec,
                         range: b::SubRange::WHOLE,
                         families: None,
                     };
                     let dy_barrier = m::Barrier::Buffer {
-                        states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        states: b::Access::SHADER_WRITE
+                            ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
                         target: &dy_spec,
                         range: b::SubRange::WHOLE,
                         families: None,
                     };
                     let dz_barrier = m::Barrier::Buffer {
-                        states: b::Access::SHADER_WRITE..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
+                        states: b::Access::SHADER_WRITE
+                            ..b::Access::SHADER_WRITE | b::Access::SHADER_READ,
                         target: &dz_spec,
                         range: b::SubRange::WHOLE,
                         families: None,
@@ -1228,11 +1188,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
 
                     cmd_buffer.bind_compute_pipeline(&fft.row_pass);
-                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[0..1], &[]);
+                    cmd_buffer.bind_compute_descriptor_sets(
+                        &fft.layout,
+                        0,
+                        &fft.desc_sets[0..1],
+                        &[],
+                    );
                     cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
-                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[1..2], &[]);
+                    cmd_buffer.bind_compute_descriptor_sets(
+                        &fft.layout,
+                        0,
+                        &fft.desc_sets[1..2],
+                        &[],
+                    );
                     cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
-                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[2..3], &[]);
+                    cmd_buffer.bind_compute_descriptor_sets(
+                        &fft.layout,
+                        0,
+                        &fft.desc_sets[2..3],
+                        &[],
+                    );
                     cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
 
                     let dx_barrier = m::Barrier::Buffer {
@@ -1263,11 +1238,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
 
                     cmd_buffer.bind_compute_pipeline(&fft.col_pass);
-                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[0..1], &[]);
+                    cmd_buffer.bind_compute_descriptor_sets(
+                        &fft.layout,
+                        0,
+                        &fft.desc_sets[0..1],
+                        &[],
+                    );
                     cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
-                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[1..2], &[]);
+                    cmd_buffer.bind_compute_descriptor_sets(
+                        &fft.layout,
+                        0,
+                        &fft.desc_sets[1..2],
+                        &[],
+                    );
                     cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
-                    cmd_buffer.bind_compute_descriptor_sets(&fft.layout, 0, &fft.desc_sets[2..3], &[]);
+                    cmd_buffer.bind_compute_descriptor_sets(
+                        &fft.layout,
+                        0,
+                        &fft.desc_sets[2..3],
+                        &[],
+                    );
                     cmd_buffer.dispatch([1, RESOLUTION as u32, 1]);
 
                     let dx_barrier = m::Barrier::Buffer {
@@ -1335,7 +1325,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     cmd_buffer.pipeline_barrier(
                         pso::PipelineStage::COMPUTE_SHADER
-                            ..pso::PipelineStage::VERTEX_SHADER | pso::PipelineStage::FRAGMENT_SHADER,
+                            ..pso::PipelineStage::VERTEX_SHADER
+                                | pso::PipelineStage::FRAGMENT_SHADER,
                         m::Dependencies::empty(),
                         &[image_barrier],
                     );
@@ -1343,11 +1334,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cmd_buffer.set_viewports(0, &[viewport.clone()]);
                     cmd_buffer.set_scissors(0, &[scissor]);
                     cmd_buffer.bind_graphics_pipeline(&pipelines[0].as_ref().unwrap());
-                    cmd_buffer.bind_graphics_descriptor_sets(&ocean_layout, 0, Some(&desc_set), &[]);
-                    cmd_buffer.bind_vertex_buffers(0, vec![
-                        (&grid_vertex_buffer, b::SubRange::WHOLE),
-                        (&grid_patch_buffer, b::SubRange::WHOLE),
-                    ]);
+                    cmd_buffer.bind_graphics_descriptor_sets(
+                        &ocean_layout,
+                        0,
+                        Some(&desc_set),
+                        &[],
+                    );
+                    cmd_buffer.bind_vertex_buffers(
+                        0,
+                        vec![
+                            (&grid_vertex_buffer, b::SubRange::WHOLE),
+                            (&grid_patch_buffer, b::SubRange::WHOLE),
+                        ],
+                    );
                     cmd_buffer.bind_index_buffer(b::IndexBufferView {
                         buffer: &grid_index_buffer,
                         range: b::SubRange::WHOLE,
@@ -1391,13 +1390,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         wait_semaphores: None,
                         signal_semaphores: Some(&submission_complete_semaphores[frame_idx]),
                     };
-                    queue_group.queues[0].submit(submission, Some(&submission_complete_fences[frame_idx]));
+                    queue_group.queues[0]
+                        .submit(submission, Some(&submission_complete_fences[frame_idx]));
 
-                    queue_group.queues[0].present_surface(
-                        &mut surface,
-                        swap_image,
-                        Some(&submission_complete_semaphores[frame_idx]),
-                    ).unwrap();
+                    queue_group.queues[0]
+                        .present_surface(
+                            &mut surface,
+                            swap_image,
+                            Some(&submission_complete_semaphores[frame_idx]),
+                        )
+                        .unwrap();
 
                     device.destroy_framebuffer(swap_framebuffer);
 

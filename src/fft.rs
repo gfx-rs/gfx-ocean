@@ -1,10 +1,10 @@
 use crate::back::Backend as B;
-use crate::translate_shader;
 use gfx_hal::{
     device::Device as _,
     pso::{self, DescriptorPool as _},
     Backend,
 };
+use std::fs::File;
 
 pub struct Fft {
     pub cs_fft_row: <B as Backend>::ShaderModule,
@@ -21,25 +21,21 @@ impl Fft {
     pub unsafe fn init(
         device: &<B as Backend>::Device,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cs_fft_row = device
-            .create_shader_module(
-                &translate_shader(include_str!("../shader/fft_row.comp"), pso::Stage::Compute)
-                    .unwrap(),
-            )
-            .unwrap();
-        let cs_fft_col = device
-            .create_shader_module(
-                &translate_shader(include_str!("../shader/fft_col.comp"), pso::Stage::Compute)
-                    .unwrap(),
-            )
-            .unwrap();
+        let cs_fft_row = device.create_shader_module(&pso::read_spirv(&File::open(
+            "shader/spv/fft_row.comp.spv",
+        )?)?)?;
+        let cs_fft_col = device.create_shader_module(&pso::read_spirv(&File::open(
+            "shader/spv/fft_col.comp.spv",
+        )?)?)?;
 
         let set_layout = device.create_descriptor_set_layout(
             &[pso::DescriptorSetLayoutBinding {
                 binding: 0,
                 ty: pso::DescriptorType::Buffer {
                     ty: pso::BufferDescriptorType::Storage { read_only: false },
-                    format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    format: pso::BufferDescriptorFormat::Structured {
+                        dynamic_offset: false,
+                    },
                 },
                 count: 1,
                 stage_flags: pso::ShaderStageFlags::COMPUTE,
@@ -53,7 +49,9 @@ impl Fft {
             &[pso::DescriptorRangeDesc {
                 ty: pso::DescriptorType::Buffer {
                     ty: pso::BufferDescriptorType::Storage { read_only: false },
-                    format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                    format: pso::BufferDescriptorFormat::Structured {
+                        dynamic_offset: false,
+                    },
                 },
                 count: 3,
             }],
