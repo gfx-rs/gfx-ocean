@@ -1,6 +1,10 @@
 use crate::back::Backend as B;
-use crate::translate_shader;
-use gfx_hal::{device::Device, pso::{self, DescriptorPool as _}, Backend};
+use gfx_hal::{
+    device::Device,
+    pso::{self, DescriptorPool as _},
+    Backend,
+};
+use std::fs::File;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PropagateLocals {
@@ -22,13 +26,9 @@ impl Propagation {
     pub unsafe fn init(
         device: &<B as Backend>::Device,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cs_propagate = device.create_shader_module(
-            &translate_shader(
-                include_str!("../shader/propagate.comp"),
-                pso::Stage::Compute,
-            )
-            .unwrap(),
-        )?;
+        let cs_propagate = device.create_shader_module(&pso::read_spirv(&File::open(
+            "shader/spv/propagate.comp.spv",
+        )?)?)?;
 
         let set_layout = device.create_descriptor_set_layout(
             &[
@@ -36,7 +36,9 @@ impl Propagation {
                     binding: 0,
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Uniform,
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
@@ -46,7 +48,9 @@ impl Propagation {
                     binding: 1,
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Storage { read_only: true },
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
@@ -56,7 +60,9 @@ impl Propagation {
                     binding: 2,
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Storage { read_only: true },
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
@@ -66,7 +72,9 @@ impl Propagation {
                     binding: 3,
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Storage { read_only: false },
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
@@ -76,7 +84,9 @@ impl Propagation {
                     binding: 4,
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Storage { read_only: false },
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
@@ -86,7 +96,9 @@ impl Propagation {
                     binding: 5,
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Storage { read_only: false },
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
@@ -102,21 +114,27 @@ impl Propagation {
                 pso::DescriptorRangeDesc {
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Uniform,
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                 },
                 pso::DescriptorRangeDesc {
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Storage { read_only: true },
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 2,
                 },
                 pso::DescriptorRangeDesc {
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Storage { read_only: false },
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 3,
                 },
@@ -178,15 +196,9 @@ impl Correction {
     pub unsafe fn init(
         device: &<B as Backend>::Device,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cs_correct = device
-            .create_shader_module(
-                &translate_shader(
-                    include_str!("../shader/correction.comp"),
-                    pso::Stage::Compute,
-                )
-                .unwrap(),
-            )
-            .unwrap();
+        let cs_correct = device.create_shader_module(&pso::read_spirv(&File::open(
+            "shader/spv/correction.comp.spv",
+        )?)?)?;
 
         let set_layout = device.create_descriptor_set_layout(
             &[
@@ -194,7 +206,9 @@ impl Correction {
                     binding: 0,
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Uniform,
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
@@ -204,7 +218,9 @@ impl Correction {
                     binding: 1,
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Storage { read_only: true },
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
@@ -214,7 +230,9 @@ impl Correction {
                     binding: 2,
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Storage { read_only: true },
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
@@ -224,7 +242,9 @@ impl Correction {
                     binding: 3,
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Storage { read_only: true },
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
@@ -249,14 +269,18 @@ impl Correction {
                 pso::DescriptorRangeDesc {
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Uniform,
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 1,
                 },
                 pso::DescriptorRangeDesc {
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Storage { read_only: true },
-                        format: pso::BufferDescriptorFormat::Structured { dynamic_offset: false },
+                        format: pso::BufferDescriptorFormat::Structured {
+                            dynamic_offset: false,
+                        },
                     },
                     count: 3,
                 },

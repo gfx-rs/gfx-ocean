@@ -1,5 +1,5 @@
 use crate::glm;
-use winit::event::{ElementState, VirtualKeyCode, KeyboardInput};
+use winit::event::{ElementState, KeyboardInput, VirtualKeyCode};
 
 #[derive(Debug, Copy, Clone)]
 enum Direction {
