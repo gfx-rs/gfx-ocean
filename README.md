@@ -15,7 +15,14 @@
 - D3D12: `cargo run --features dx12`
 - Metal: `cargo run --features metal`
 
-## Camera Controls
+### Camera Controls
 - Forwards/Backwards: `W`/`S`
 - Strafe Left/Right: `A`/`D`
 - Pitch/Yaw: Arrow Keys or Mouse
+
+## Running :ocean: on iOS
+- cd `examples/ios/`
+- Run `xcodegen`
+- Open generated Xcode project
+- Set signing team in Xcode
+- Run example on device

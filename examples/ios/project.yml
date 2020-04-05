@@ -1,0 +1,55 @@
+name: gfx-ocean
+options:
+  bundleIdPrefix: com.gfx.ocean
+configs:
+  Debug: debug
+  Release: release
+targets:
+  cargo_ios:
+    type: ""
+    platform: iOS
+    legacy:
+      toolPath: /bin/sh
+      arguments: "build_rust_deps.sh"
+      workingDirectory: "."
+  game_ios:
+    sources: src
+    type: application
+    platform: iOS
+    deploymentTarget: "13.0"
+    scheme:
+      environmentVariables:
+        - variable: RUST_BACKTRACE
+          value: 1
+          isEnabled: true
+        - variable: RUST_LOG
+          value: info
+          isEnabled: true
+        - variable: METAL_DEVICE_WRAPPER_TYPE
+          value: 1
+          isEnabled: true
+    settings:
+      base:
+        OTHER_LDFLAGS: ["$(inherited)", "-locean_ios"]
+        ENABLE_BITCODE: NO
+        CLANG_CXX_LANGUAGE_STANDARD: c++14
+        CLANG_CXX_LIBRARY: libc++
+      configs:
+        debug:
+          HEADER_SEARCH_PATHS: ["$(inherited)", "src/"]
+          LIBRARY_SEARCH_PATHS: ["$(inherited)", "../../target/aarch64-apple-ios/debug/examples"]
+        release:
+          HEADER_SEARCH_PATHS: ["$(inherited)", "src/"]
+          LIBRARY_SEARCH_PATHS: ["$(inherited)", "../../target/aarch64-apple-ios/release/examples"]
+    dependencies:
+      - sdk: libresolv.tbd
+      - sdk: libc++.tbd
+      - target: cargo_ios
+        embed: false
+    info:
+      path: src/Info.plist
+      properties:
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UILaunchStoryboardName: LaunchScreen

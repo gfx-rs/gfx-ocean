@@ -4,7 +4,7 @@ use gfx_hal::{
     pso::{self, DescriptorPool as _},
     Backend,
 };
-use std::fs::File;
+use std::io::Cursor;
 
 pub struct Fft {
     pub cs_fft_row: <B as Backend>::ShaderModule,
@@ -21,12 +21,12 @@ impl Fft {
     pub unsafe fn init(
         device: &<B as Backend>::Device,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cs_fft_row = device.create_shader_module(&pso::read_spirv(&File::open(
-            "shader/spv/fft_row.comp.spv",
-        )?)?)?;
-        let cs_fft_col = device.create_shader_module(&pso::read_spirv(&File::open(
-            "shader/spv/fft_col.comp.spv",
-        )?)?)?;
+        let cs_fft_row = device.create_shader_module(&pso::read_spirv(Cursor::new(
+            &include_bytes!("../shader/spv/fft_row.comp.spv")[..],
+        ))?)?;
+        let cs_fft_col = device.create_shader_module(&pso::read_spirv(Cursor::new(
+            &include_bytes!("../shader/spv/fft_col.comp.spv")[..],
+        ))?)?;
 
         let set_layout = device.create_descriptor_set_layout(
             &[pso::DescriptorSetLayoutBinding {

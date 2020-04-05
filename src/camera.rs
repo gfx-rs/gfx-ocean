@@ -1,5 +1,6 @@
 use crate::glm;
-use winit::event::{ElementState, KeyboardInput, VirtualKeyCode};
+use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::event::{ElementState, KeyboardInput, Touch, TouchPhase, VirtualKeyCode};
 
 #[derive(Debug, Copy, Clone)]
 enum Direction {
@@ -15,7 +16,7 @@ struct InputState {
 }
 
 impl InputState {
-    fn handle_event(&mut self, input: KeyboardInput) {
+    fn handle_keyboard_event(&mut self, input: KeyboardInput) {
         let KeyboardInput {
             virtual_keycode,
             state,
@@ -50,6 +51,44 @@ impl InputState {
             _ => (),
         }
     }
+
+    fn handle_touch_event(
+        &mut self,
+        input: Touch,
+        screen_size: PhysicalSize<f64>,
+        scale_factor: f64,
+    ) {
+        let Touch {
+            phase, location, ..
+        } = input;
+
+        let PhysicalPosition {
+            x: touch_x,
+            y: touch_y,
+        } = location;
+
+        let PhysicalSize {
+            width: screen_x,
+            height: screen_y,
+        } = screen_size;
+
+        match (phase, location) {
+            (TouchPhase::Started, _) => {
+                if touch_x * scale_factor > screen_x / 2.0 {
+                    self.rot_y = Some(Direction::Negative)
+                }
+
+                if touch_x * scale_factor < screen_x / 2.0 {
+                    self.rot_y = Some(Direction::Positive)
+                }
+            }
+            _ => {
+                self.rot_x = None;
+                self.rot_y = None;
+                self.forward = None;
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -72,8 +111,18 @@ impl Camera {
         }
     }
 
-    pub fn handle_event(&mut self, input: KeyboardInput) {
-        self.input.handle_event(input);
+    pub fn handle_keyboard_event(&mut self, input: KeyboardInput) {
+        self.input.handle_keyboard_event(input);
+    }
+
+    pub fn handle_touch_event(
+        &mut self,
+        input: Touch,
+        screen_size: PhysicalSize<f64>,
+        scale_factor: f64,
+    ) {
+        self.input
+            .handle_touch_event(input, screen_size, scale_factor);
     }
 
     pub fn update(&mut self, dt: f32) {
