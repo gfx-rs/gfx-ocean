@@ -14,12 +14,18 @@ jobs:
         os: [macos-10.15, ubuntu-18.04, windows-2019]
         include:
           - os: macos-10.15
+            BUILD_COMMAND: cargo build --example ocean_ios --features metal --target aarch64-apple-ios
+            TARGET_BUILD: aarch64-apple-ios
+          - os: macos-10.15
             BUILD_COMMAND: cargo build --features metal
+            TARGET_BUILD: macos
           - os: ubuntu-18.04
             BUILD_COMMAND: cargo build --features vulkan
+            TARGET_BUILD: linux
           - os: windows-2019
             BUILD_COMMAND: cargo build --features dx12
+            TARGET_BUILD: windows
     steps:
     - uses: actions/checkout@v2
-    - name: Build on ${{ matrix.os }}
+    - name: Build on ${{ matrix.TARGET_BUILD }}
       run: ${{ matrix.BUILD_COMMAND }}

@@ -4,7 +4,7 @@ use gfx_hal::{
     pso::{self, DescriptorPool as _},
     Backend,
 };
-use std::fs::File;
+use std::io::Cursor;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PropagateLocals {
@@ -26,9 +26,9 @@ impl Propagation {
     pub unsafe fn init(
         device: &<B as Backend>::Device,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cs_propagate = device.create_shader_module(&pso::read_spirv(&File::open(
-            "shader/spv/propagate.comp.spv",
-        )?)?)?;
+        let cs_propagate = device.create_shader_module(&pso::read_spirv(Cursor::new(
+            &include_bytes!("../shader/spv/propagate.comp.spv")[..],
+        ))?)?;
 
         let set_layout = device.create_descriptor_set_layout(
             &[
@@ -196,9 +196,9 @@ impl Correction {
     pub unsafe fn init(
         device: &<B as Backend>::Device,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cs_correct = device.create_shader_module(&pso::read_spirv(&File::open(
-            "shader/spv/correction.comp.spv",
-        )?)?)?;
+        let cs_correct = device.create_shader_module(&pso::read_spirv(Cursor::new(
+            &include_bytes!("../shader/spv/correction.comp.spv")[..],
+        ))?)?;
 
         let set_layout = device.create_descriptor_set_layout(
             &[

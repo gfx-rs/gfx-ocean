@@ -9,21 +9,31 @@ dx12 = ["gfx-backend-dx12"]
 vulkan = ["gfx-backend-vulkan"]
 metal = ["gfx-backend-metal"]
 
+[lib]
+name = "ocean"
+path = "src/lib.rs"
+
+[[example]]
+name = "ocean_ios"
+path = "examples/ios/ios.rs"
+crate-type = ["staticlib"]
+required-features = ["metal"]
+
 [[bin]]
 name = "ocean"
-path = "src/main.rs"
+path = "examples/desktop.rs"
 
 [dependencies]
 env_logger = "0.7"
 log = "0.4"
 winit = "0.22"
 nalgebra-glm = "0.4"
-glsl-to-spirv = "0.1"
 bincode = "1.1"
 
 gfx-hal = "0.5"
 gfx-backend-vulkan = { version = "0.5", features = ["x11", "xcb"], optional = true }
 [target.'cfg(windows)'.dependencies]
 gfx-backend-dx12 = { version = "0.5", optional = true }
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(any(target_os = "macos", all(target_os = "ios", target_arch = "aarch64")))'.dependencies]
 gfx-backend-metal = { version = "0.5", optional = true }
+objc = "0.2.7"

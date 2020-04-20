@@ -12,7 +12,7 @@ use gfx_backend_vulkan as back;
 use gfx_hal as hal;
 use nalgebra_glm as glm;
 
-use std::{borrow::Borrow, fs, io::Read, iter, time::Instant};
+use std::{borrow::Borrow, io::Cursor, iter, time::Instant};
 
 use gfx_hal::{
     adapter::PhysicalDevice as _,
@@ -27,6 +27,16 @@ use gfx_hal::{
     window::{Extent2D, PresentationSurface as _, Surface as _},
     IndexType, Instance,
 };
+
+#[cfg(target_os = "ios")]
+use winit::platform::ios::{ValidOrientations, WindowBuilderExtIOS, WindowExtIOS};
+
+#[cfg(target_os = "ios")]
+#[macro_use]
+extern crate objc;
+
+#[cfg(target_os = "ios")]
+use objc::runtime::{Class, Object};
 
 use winit::dpi::{LogicalSize, PhysicalSize, Size};
 use winit::event::WindowEvent;
@@ -72,24 +82,45 @@ const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
 };
 
 #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         env_logger::init();
 
         let events_loop = winit::event_loop::EventLoop::new();
+        #[cfg(not(target_os = "ios"))]
         let wb = winit::window::WindowBuilder::new()
             .with_inner_size(Size::Logical(LogicalSize {
                 width: 1200.0,
                 height: 700.0,
             }))
             .with_title("ocean".to_string());
+
+        #[cfg(target_os = "ios")]
+        let wb = winit::window::WindowBuilder::new()
+            .with_valid_orientations(ValidOrientations::Portrait);
+
         let window = wb.build(&events_loop).unwrap();
+
+        #[cfg(target_os = "ios")]
+        {
+            // TODO: We need this because window property from winit UIView is null
+            // without this gfx can't get native scale factor when create surface
+            let view: *mut Object = window.ui_view() as *const _ as *mut Object;
+            let view_window: *mut Object = msg_send![view, window];
+            if view_window.is_null() {
+                let () = msg_send![
+                    window.ui_window() as *const _ as *mut Object,
+                    addSubview: view
+                ];
+            }
+        }
 
         let PhysicalSize {
             width: pixel_width,
             height: pixel_height,
         } = window.inner_size();
 
+        #[rustfmt::skip]
         let mut camera = camera::Camera::new(
             glm::vec3(-8.0, 32.0, 120.0),
             glm::vec3(-0.6, -1.5707, 0.0),
@@ -213,13 +244,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         let vs_ocean = {
-            let file = fs::File::open("shader/spv/ocean.vert.spv")?;
-            device.create_shader_module(&pso::read_spirv(&file)?)?
+            device.create_shader_module(&pso::read_spirv(Cursor::new(
+                &include_bytes!("../shader/spv/ocean.vert.spv")[..],
+            ))?)?
         };
 
         let fs_ocean = {
-            let file = fs::File::open("shader/spv/ocean.frag.spv")?;
-            device.create_shader_module(&pso::read_spirv(&file)?)?
+            device.create_shader_module(&pso::read_spirv(Cursor::new(
+                &include_bytes!("../shader/spv/ocean.frag.spv")[..],
+            ))?)?
         };
 
         let fft = fft::Fft::init(&device)?;
@@ -725,12 +758,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             depth: 0.0..1.0,
         };
-        let scissor = pso::Rect {
-            x: 0,
-            y: 0,
-            w: pixel_width as _,
-            h: pixel_height as _,
-        };
 
         // Upload initial data
         let (omega_staging_buffer, omega_staging_memory) = {
@@ -760,10 +787,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     data_raw as *mut _,
                     (RESOLUTION * RESOLUTION) as _,
                 );
-                let mut file = fs::File::open("data/omega.bin").unwrap();
-                let mut contents = Vec::new();
-                file.read_to_end(&mut contents)?;
-                let omega: Vec<f32> = bincode::deserialize(&contents[..]).unwrap();
+                let omega: Vec<f32> =
+                    bincode::deserialize(&include_bytes!("../data/omega.bin")[..]).unwrap();
                 data.copy_from_slice(&omega);
                 device
                     .flush_mapped_memory_ranges(iter::once((&buffer_memory, m::Segment::ALL)))
@@ -801,10 +826,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     data_raw as *mut _,
                     (RESOLUTION * RESOLUTION) as _,
                 );
-                let mut file = fs::File::open("data/spectrum.bin").unwrap();
-                let mut contents = Vec::new();
-                file.read_to_end(&mut contents)?;
-                let spectrum: Vec<[f32; 2]> = bincode::deserialize(&contents[..]).unwrap();
+                let spectrum: Vec<[f32; 2]> =
+                    bincode::deserialize(&include_bytes!("../data/spectrum.bin")[..]).unwrap();
                 data.copy_from_slice(&spectrum);
                 device
                     .flush_mapped_memory_ranges(iter::once((&buffer_memory, m::Segment::ALL)))
@@ -1055,7 +1078,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         return;
                     }
                     WindowEvent::KeyboardInput { input, .. } => {
-                        camera.handle_event(input);
+                        camera.handle_keyboard_event(input);
+                    }
+                    WindowEvent::Touch(touch) => {
+                        camera.handle_touch_event(
+                            touch,
+                            PhysicalSize {
+                                width: pixel_width as f64,
+                                height: pixel_height as f64,
+                            },
+                            window.scale_factor(),
+                        );
                     }
                     _ => (),
                 },
@@ -1332,7 +1365,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
 
                     cmd_buffer.set_viewports(0, &[viewport.clone()]);
-                    cmd_buffer.set_scissors(0, &[scissor]);
+                    cmd_buffer.set_scissors(0, &[viewport.rect]);
                     cmd_buffer.bind_graphics_pipeline(&pipelines[0].as_ref().unwrap());
                     cmd_buffer.bind_graphics_descriptor_sets(
                         &ocean_layout,
@@ -1357,12 +1390,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         cmd_buffer.begin_render_pass(
                             &ocean_pass,
                             &swap_framebuffer,
-                            pso::Rect {
-                                x: 0,
-                                y: 0,
-                                w: pixel_width as _,
-                                h: pixel_height as _,
-                            },
+                            viewport.rect,
                             &[
                                 command::ClearValue {
                                     color: command::ClearColor {
