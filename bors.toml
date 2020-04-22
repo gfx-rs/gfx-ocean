@@ -1,0 +1,8 @@
+status = [
+  "iOS Metal",
+  "MacOS Metal",
+  "Ubuntu Vulkan",
+  "Windows DirectX 12",
+]
+
+timeout_sec = 18000 # 5 hours
