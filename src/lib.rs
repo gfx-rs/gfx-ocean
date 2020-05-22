@@ -71,7 +71,9 @@ struct Locals {
     _pad: [f32; 1],
 }
 
-const RESOLUTION: usize = 512;
+const WORKGROUP_SIZE: usize = 16;
+const WORKGROUP_NUM: usize = 32;
+const RESOLUTION: usize = WORKGROUP_SIZE * WORKGROUP_NUM;
 const HALF_RESOLUTION: usize = 128;
 const DOMAIN_SIZE: f32 = 1000.0;
 
@@ -1191,7 +1193,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                         Some(&propagate.desc_set),
                         &[],
                     );
-                    cmd_buffer.dispatch([RESOLUTION as u32, RESOLUTION as u32, 1]);
+                    cmd_buffer.dispatch([WORKGROUP_NUM as u32, WORKGROUP_NUM as u32, 1]);
 
                     let dx_barrier = m::Barrier::Buffer {
                         states: b::Access::SHADER_WRITE
@@ -1341,7 +1343,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                         Some(&correction.desc_set),
                         &[],
                     );
-                    cmd_buffer.dispatch([RESOLUTION as u32, RESOLUTION as u32, 1]);
+                    cmd_buffer.dispatch([WORKGROUP_NUM as u32, WORKGROUP_NUM as u32, 1]);
 
                     let image_barrier = m::Barrier::Image {
                         states: (
