@@ -42,9 +42,6 @@ use winit::dpi::{LogicalSize, PhysicalSize, Size};
 use winit::event::WindowEvent;
 use winit::event_loop::ControlFlow;
 
-#[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
-use ocean::{CorrectionLocals, PropagateLocals};
-
 mod camera;
 #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
 mod fft;
@@ -77,11 +74,10 @@ const RESOLUTION: usize = WORKGROUP_SIZE * WORKGROUP_NUM;
 const HALF_RESOLUTION: usize = 128;
 const DOMAIN_SIZE: f32 = 1000.0;
 
-const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
-    aspects: f::Aspects::COLOR,
-    levels: 0..1,
-    layers: 0..1,
-};
+#[cfg(not(any(feature = "vulkan", feature = "dx12", feature = "metal")))]
+pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    panic!("No backend selected!");
+}
 
 #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -239,27 +235,26 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 f::Swizzle::NO,
                 i::SubresourceRange {
                     aspects: f::Aspects::DEPTH,
-                    levels: 0..1,
-                    layers: 0..1,
+                    ..Default::default()
                 },
             )
             .unwrap();
 
         let vs_ocean = {
-            device.create_shader_module(&pso::read_spirv(Cursor::new(
+            device.create_shader_module(&gfx_auxil::read_spirv(Cursor::new(
                 &include_bytes!("../shader/spv/ocean.vert.spv")[..],
             ))?)?
         };
 
         let fs_ocean = {
-            device.create_shader_module(&pso::read_spirv(Cursor::new(
+            device.create_shader_module(&gfx_auxil::read_spirv(Cursor::new(
                 &include_bytes!("../shader/spv/ocean.frag.spv")[..],
             ))?)?
         };
 
         let fft = fft::Fft::init(&device)?;
-        let propagate = ocean::Propagation::init(&device)?;
-        let correction = ocean::Correction::init(&device)?;
+        let propagate = ocean::Propagation::<back::Backend>::init(&device)?;
+        let correction = ocean::Correction::<back::Backend>::init(&device)?;
 
         let set_layout = device.create_descriptor_set_layout(
             &[
@@ -332,7 +327,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             device.create_render_pass(&[attachment, depth_attachment], &[subpass], &[])?
         };
 
-        let pipelines = {
+        let pipeline = {
             let (vs_entry, fs_entry) = (
                 pso::EntryPoint {
                     entry: "main",
@@ -346,12 +341,52 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 },
             );
 
-            let shader_entries = pso::GraphicsShaderSet {
+            let vertex_buffers = [
+                pso::VertexBufferDesc {
+                    binding: 0,
+                    stride: std::mem::size_of::<Vertex>() as u32,
+                    rate: pso::VertexInputRate::Vertex,
+                },
+                pso::VertexBufferDesc {
+                    binding: 1,
+                    stride: std::mem::size_of::<PatchOffset>() as u32,
+                    rate: pso::VertexInputRate::Instance(1),
+                },
+            ];
+            let attributes = [
+                pso::AttributeDesc {
+                    location: 0,
+                    binding: 0,
+                    element: pso::Element {
+                        format: Format::Rgb32Sfloat,
+                        offset: 0,
+                    },
+                },
+                pso::AttributeDesc {
+                    location: 1,
+                    binding: 0,
+                    element: pso::Element {
+                        format: Format::Rg32Sfloat,
+                        offset: 12,
+                    },
+                },
+                pso::AttributeDesc {
+                    location: 2,
+                    binding: 1,
+                    element: pso::Element {
+                        format: Format::Rg32Sfloat,
+                        offset: 0,
+                    },
+                },
+            ];
+
+            let prim_assembler = pso::PrimitiveAssemblerDesc::Vertex {
+                buffers: &vertex_buffers,
+                attributes: &attributes,
+                input_assembler: pso::InputAssemblerDesc::new(pso::Primitive::TriangleList),
                 vertex: vs_entry,
-                hull: None,
-                domain: None,
+                tessellation: None,
                 geometry: None,
-                fragment: Some(fs_entry),
             };
 
             let subpass = pass::Subpass {
@@ -360,9 +395,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let mut ocean_pipe_desc = pso::GraphicsPipelineDesc::new(
-                shader_entries,
-                pso::Primitive::TriangleList,
+                prim_assembler,
                 pso::Rasterizer::FILL,
+                Some(fs_entry),
                 &ocean_layout,
                 subpass,
             );
@@ -380,42 +415,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 mask: pso::ColorMask::ALL,
                 blend: None,
             });
-            ocean_pipe_desc.vertex_buffers.push(pso::VertexBufferDesc {
-                binding: 0,
-                stride: std::mem::size_of::<Vertex>() as u32,
-                rate: pso::VertexInputRate::Vertex,
-            });
-            ocean_pipe_desc.vertex_buffers.push(pso::VertexBufferDesc {
-                binding: 1,
-                stride: std::mem::size_of::<PatchOffset>() as u32,
-                rate: pso::VertexInputRate::Instance(1),
-            });
-            ocean_pipe_desc.attributes.push(pso::AttributeDesc {
-                location: 0,
-                binding: 0,
-                element: pso::Element {
-                    format: Format::Rgb32Sfloat,
-                    offset: 0,
-                },
-            });
-            ocean_pipe_desc.attributes.push(pso::AttributeDesc {
-                location: 1,
-                binding: 0,
-                element: pso::Element {
-                    format: Format::Rg32Sfloat,
-                    offset: 12,
-                },
-            });
-            ocean_pipe_desc.attributes.push(pso::AttributeDesc {
-                location: 2,
-                binding: 1,
-                element: pso::Element {
-                    format: Format::Rg32Sfloat,
-                    offset: 0,
-                },
-            });
 
-            device.create_graphics_pipelines(&[ocean_pipe_desc], None)
+            device
+                .create_graphics_pipeline(&ocean_pipe_desc, None)
+                .unwrap()
         };
 
         let sampler =
@@ -693,7 +696,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let (propagate_locals_buffer, propagate_locals_memory) = {
-            let buffer_stride = std::mem::size_of::<PropagateLocals>() as u64;
+            let buffer_stride = std::mem::size_of::<ocean::PropagateLocals>() as u64;
             let buffer_len = buffer_stride;
             let mut locals_buffer = device.create_buffer(buffer_len, b::Usage::UNIFORM).unwrap();
             let buffer_req = device.get_buffer_requirements(&locals_buffer);
@@ -714,7 +717,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let (correct_locals_buffer, correct_locals_memory) = {
-            let buffer_stride = std::mem::size_of::<CorrectionLocals>() as u64;
+            let buffer_stride = std::mem::size_of::<ocean::CorrectionLocals>() as u64;
             let buffer_len = buffer_stride;
             let mut locals_buffer = device.create_buffer(buffer_len, b::Usage::UNIFORM).unwrap();
             let buffer_req = device.get_buffer_requirements(&locals_buffer);
@@ -734,7 +737,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
             {
                 let locals_raw = device.map_memory(&buffer_memory, m::Segment::ALL)?;
-                let locals = CorrectionLocals {
+                let locals = ocean::CorrectionLocals {
                     resolution: RESOLUTION as _,
                 };
                 std::ptr::copy_nonoverlapping(
@@ -872,7 +875,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 i::ViewKind::D2,
                 img_format,
                 Swizzle::NO,
-                COLOR_RANGE,
+                i::SubresourceRange {
+                    aspects: f::Aspects::COLOR,
+                    ..Default::default()
+                },
             )
             .unwrap();
         let displacement_srv = device
@@ -881,7 +887,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 i::ViewKind::D2,
                 img_format,
                 Swizzle::NO,
-                COLOR_RANGE,
+                i::SubresourceRange {
+                    aspects: f::Aspects::COLOR,
+                    ..Default::default()
+                },
             )
             .unwrap();
 
@@ -898,7 +907,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     ),
                 target: &displacement_map,
                 families: None,
-                range: COLOR_RANGE,
+                range: i::SubresourceRange {
+                    aspects: f::Aspects::COLOR,
+                    ..Default::default()
+                },
             };
             cmd_buffer.pipeline_barrier(
                 pso::PipelineStage::TOP_OF_PIPE..pso::PipelineStage::COMPUTE_SHADER,
@@ -1162,11 +1174,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     {
-                        let buffer_len = std::mem::size_of::<PropagateLocals>() as u64;
+                        let buffer_len = std::mem::size_of::<ocean::PropagateLocals>() as u64;
                         let locals_raw = device
                             .map_memory(&propagate_locals_memory, m::Segment::ALL)
                             .unwrap();
-                        let locals = PropagateLocals {
+                        let locals = ocean::PropagateLocals {
                             time: current,
                             resolution: RESOLUTION as i32,
                             domain_size: DOMAIN_SIZE,
@@ -1326,7 +1338,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 i::Layout::General,
                             ),
                         target: &displacement_map,
-                        range: COLOR_RANGE,
+                        range: i::SubresourceRange {
+                            aspects: f::Aspects::COLOR,
+                            ..Default::default()
+                        },
                         families: None,
                     };
                     cmd_buffer.pipeline_barrier(
@@ -1355,7 +1370,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 i::Layout::General,
                             ),
                         target: &displacement_map,
-                        range: COLOR_RANGE,
+                        range: i::SubresourceRange {
+                            aspects: f::Aspects::COLOR,
+                            ..Default::default()
+                        },
                         families: None,
                     };
                     cmd_buffer.pipeline_barrier(
@@ -1368,7 +1386,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
                     cmd_buffer.set_viewports(0, &[viewport.clone()]);
                     cmd_buffer.set_scissors(0, &[viewport.rect]);
-                    cmd_buffer.bind_graphics_pipeline(&pipelines[0].as_ref().unwrap());
+                    cmd_buffer.bind_graphics_pipeline(&pipeline);
                     cmd_buffer.bind_graphics_descriptor_sets(
                         &ocean_layout,
                         0,
@@ -1424,7 +1442,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                         .submit(submission, Some(&submission_complete_fences[frame_idx]));
 
                     queue_group.queues[0]
-                        .present_surface(
+                        .present(
                             &mut surface,
                             swap_image,
                             Some(&submission_complete_semaphores[frame_idx]),
@@ -1451,6 +1469,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         device.destroy_shader_module(vs_ocean);
         device.destroy_shader_module(fs_ocean);
+        device.destroy_graphics_pipeline(pipeline);
 
         device.destroy_buffer(grid_index_buffer);
         device.destroy_buffer(grid_vertex_buffer);
@@ -1471,12 +1490,6 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         device.free_memory(correct_locals_memory);
         device.free_memory(omega_staging_memory);
         device.free_memory(spec_staging_memory);
-
-        for pipeline in pipelines {
-            if let Ok(pipeline) = pipeline {
-                device.destroy_graphics_pipeline(pipeline);
-            }
-        }
 
         surface.unconfigure_swapchain(&device);
 
