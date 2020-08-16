@@ -21,10 +21,10 @@ impl Fft {
     pub unsafe fn init(
         device: &<B as Backend>::Device,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cs_fft_row = device.create_shader_module(&pso::read_spirv(Cursor::new(
+        let cs_fft_row = device.create_shader_module(&gfx_auxil::read_spirv(Cursor::new(
             &include_bytes!("../shader/spv/fft_row.comp.spv")[..],
         ))?)?;
-        let cs_fft_col = device.create_shader_module(&pso::read_spirv(Cursor::new(
+        let cs_fft_col = device.create_shader_module(&gfx_auxil::read_spirv(Cursor::new(
             &include_bytes!("../shader/spv/fft_col.comp.spv")[..],
         ))?)?;
 
