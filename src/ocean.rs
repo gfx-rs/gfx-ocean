@@ -1,4 +1,3 @@
-use crate::back::Backend as B;
 use gfx_hal::{
     device::Device,
     pso::{self, DescriptorPool as _},
@@ -13,20 +12,18 @@ pub struct PropagateLocals {
     pub domain_size: f32,
 }
 
-pub struct Propagation {
-    pub cs_propagate: <B as Backend>::ShaderModule,
-    pub set_layout: <B as Backend>::DescriptorSetLayout,
-    pub layout: <B as Backend>::PipelineLayout,
-    pub pipeline: <B as Backend>::ComputePipeline,
-    pub desc_set: <B as Backend>::DescriptorSet,
-    pub pool: <B as Backend>::DescriptorPool,
+pub struct Propagation<B: Backend> {
+    pub cs_propagate: B::ShaderModule,
+    pub set_layout: B::DescriptorSetLayout,
+    pub layout: B::PipelineLayout,
+    pub pipeline: B::ComputePipeline,
+    pub desc_set: B::DescriptorSet,
+    pub pool: B::DescriptorPool,
 }
 
-impl Propagation {
-    pub unsafe fn init(
-        device: &<B as Backend>::Device,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cs_propagate = device.create_shader_module(&pso::read_spirv(Cursor::new(
+impl<B: Backend> Propagation<B> {
+    pub unsafe fn init(device: &B::Device) -> Result<Self, Box<dyn std::error::Error>> {
+        let cs_propagate = device.create_shader_module(&gfx_auxil::read_spirv(Cursor::new(
             &include_bytes!("../shader/spv/propagate.comp.spv")[..],
         ))?)?;
 
@@ -183,20 +180,18 @@ pub struct CorrectionLocals {
     pub resolution: u32,
 }
 
-pub struct Correction {
-    pub cs_correct: <B as Backend>::ShaderModule,
-    pub set_layout: <B as Backend>::DescriptorSetLayout,
-    pub layout: <B as Backend>::PipelineLayout,
-    pub pipeline: <B as Backend>::ComputePipeline,
-    pub desc_set: <B as Backend>::DescriptorSet,
-    pub pool: <B as Backend>::DescriptorPool,
+pub struct Correction<B: Backend> {
+    pub cs_correct: B::ShaderModule,
+    pub set_layout: B::DescriptorSetLayout,
+    pub layout: B::PipelineLayout,
+    pub pipeline: B::ComputePipeline,
+    pub desc_set: B::DescriptorSet,
+    pub pool: B::DescriptorPool,
 }
 
-impl Correction {
-    pub unsafe fn init(
-        device: &<B as Backend>::Device,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cs_correct = device.create_shader_module(&pso::read_spirv(Cursor::new(
+impl<B: Backend> Correction<B> {
+    pub unsafe fn init(device: &B::Device) -> Result<Self, Box<dyn std::error::Error>> {
+        let cs_correct = device.create_shader_module(&gfx_auxil::read_spirv(Cursor::new(
             &include_bytes!("../shader/spv/correction.comp.spv")[..],
         ))?)?;
 
