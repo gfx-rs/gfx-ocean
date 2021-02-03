@@ -84,8 +84,13 @@ pub struct Renderer<B: hal::Backend> {
     viewport: pso::Viewport,
     sampler: B::Sampler,
     displacement_map: B::Image,
+    depth_image: B::Image,
     depth_view: B::ImageView,
+    displacement_uav: B::ImageView,
+    displacement_srv: B::ImageView,
 
+    depth_memory: B::Memory,
+    displacement_memory: B::Memory,
     grid_index_memory: B::Memory,
     grid_vertex_memory: B::Memory,
     grid_patch_memory: B::Memory,
@@ -94,8 +99,6 @@ pub struct Renderer<B: hal::Backend> {
     spectrum_memory: B::Memory,
     propagate_locals_memory: B::Memory,
     correct_locals_memory: B::Memory,
-    omega_staging_memory: B::Memory,
-    spec_staging_memory: B::Memory,
 }
 
 impl<B: hal::Backend> Renderer<B> {
@@ -139,7 +142,7 @@ impl<B: hal::Backend> Renderer<B> {
         let mut general_pool = device
             .create_command_pool(queue_group.family, pool::CommandPoolCreateFlags::empty())?;
 
-        let swap_config = hal::window::SwapchainConfig::from_caps(
+        let mut swap_config = hal::window::SwapchainConfig::from_caps(
             &caps,
             surface_format,
             Extent2D {
@@ -147,6 +150,7 @@ impl<B: hal::Backend> Renderer<B> {
                 height: pixel_height,
             },
         );
+        swap_config.present_mode = hal::window::PresentMode::FIFO;
         let swap_framebuffer_attachment = swap_config.framebuffer_attachment();
         surface.configure_swapchain(&device, swap_config).unwrap();
 
@@ -159,18 +163,12 @@ impl<B: hal::Backend> Renderer<B> {
         let mut cmd_buffers = Vec::with_capacity(frames_in_flight);
 
         for _ in 0..frames_in_flight {
-            cmd_pools.push(
-                device.create_command_pool(
-                    queue_group.family,
-                    pool::CommandPoolCreateFlags::empty(),
-                )?,
-            );
-        }
-
-        for i in 0..frames_in_flight {
+            let mut cmd_pool = device
+                .create_command_pool(queue_group.family, pool::CommandPoolCreateFlags::empty())?;
             submission_complete_semaphores.push(device.create_semaphore()?);
             submission_complete_fences.push(device.create_fence(true)?);
-            cmd_buffers.push(cmd_pools[i].allocate_one(command::Level::Primary));
+            cmd_buffers.push(cmd_pool.allocate_one(command::Level::Primary));
+            cmd_pools.push(cmd_pool);
         }
 
         let depth_format = f::Format::D32Sfloat;
@@ -284,7 +282,7 @@ impl<B: hal::Backend> Renderer<B> {
                     pass::AttachmentStoreOp::DontCare,
                 ),
                 stencil_ops: pass::AttachmentOps::DONT_CARE,
-                layouts: i::Layout::Undefined..i::Layout::DepthStencilAttachmentOptimal,
+                layouts: i::Layout::Undefined..i::Layout::Undefined,
             };
 
             let subpass = pass::SubpassDesc {
@@ -452,7 +450,7 @@ impl<B: hal::Backend> Renderer<B> {
             {
                 let locals_raw = device.map_memory(&mut buffer_memory, m::Segment::ALL)?;
                 let locals = Locals {
-                    a_proj: perspective.into(),
+                    a_proj: perspective,
                     a_view: camera.view().into(),
                     a_cam_pos: camera.position().into(),
                     _pad: [0.0; 1],
@@ -843,8 +841,8 @@ impl<B: hal::Backend> Renderer<B> {
             .unwrap()
             .into();
 
-        let image_memory = device.allocate_memory(device_type, image_req.size).unwrap();
-        device.bind_image_memory(&image_memory, 0, &mut displacement_map)?;
+        let displacement_memory = device.allocate_memory(device_type, image_req.size).unwrap();
+        device.bind_image_memory(&displacement_memory, 0, &mut displacement_map)?;
         let displacement_uav = device
             .create_image_view(
                 &displacement_map,
@@ -924,6 +922,13 @@ impl<B: hal::Backend> Renderer<B> {
             );
             device.wait_for_fence(&upload_fence, !0).unwrap();
         }
+
+        device.destroy_command_pool(general_pool);
+        device.destroy_fence(upload_fence);
+        device.destroy_buffer(omega_staging_buffer);
+        device.destroy_buffer(spec_staging_buffer);
+        device.free_memory(omega_staging_memory);
+        device.free_memory(spec_staging_memory);
 
         device.write_descriptor_set(pso::DescriptorSetWrite {
             set: &mut desc_set,
@@ -1036,7 +1041,12 @@ impl<B: hal::Backend> Renderer<B> {
             viewport,
             sampler,
             displacement_map,
+            depth_image,
             depth_view,
+            displacement_uav,
+            displacement_srv,
+            depth_memory,
+            displacement_memory,
             grid_index_memory,
             grid_vertex_memory,
             grid_patch_memory,
@@ -1045,8 +1055,6 @@ impl<B: hal::Backend> Renderer<B> {
             spectrum_memory,
             propagate_locals_memory,
             correct_locals_memory,
-            omega_staging_memory,
-            spec_staging_memory,
         })
     }
 
@@ -1057,12 +1065,14 @@ impl<B: hal::Backend> Renderer<B> {
         frame_idx: usize,
         time: f32,
     ) {
+        /*
         self.device
             .wait_for_fence(&self.submission_complete_fences[frame_idx], !0)
             .unwrap();
         self.device
             .reset_fence(&mut self.submission_complete_fences[frame_idx])
             .unwrap();
+        */
         self.cmd_pools[frame_idx].reset(false);
 
         let (swapchain_image, _) = surface.acquire_image(!0).unwrap();
@@ -1076,7 +1086,7 @@ impl<B: hal::Backend> Renderer<B> {
                 .map_memory(&mut self.locals_memory, m::Segment::ALL)
                 .unwrap();
             let locals = Locals {
-                a_proj: self.perspective.into(),
+                a_proj: self.perspective,
                 a_view: camera.view().into(),
                 a_cam_pos: camera.position().into(),
                 _pad: [0.0; 1],
@@ -1357,7 +1367,8 @@ impl<B: hal::Backend> Renderer<B> {
             iter::once(&*cmd_buffer),
             iter::empty(),
             iter::once(&self.submission_complete_semaphores[frame_idx]),
-            Some(&mut self.submission_complete_fences[frame_idx]),
+            //Some(&mut self.submission_complete_fences[frame_idx]),
+            None,
         );
 
         self.queue_group.queues[0]
@@ -1378,6 +1389,15 @@ impl<B: hal::Backend> Renderer<B> {
 
         self.device.destroy_descriptor_pool(self.desc_pool);
         self.device.destroy_descriptor_set_layout(self.set_layout);
+        for cmd_pool in self.cmd_pools {
+            self.device.destroy_command_pool(cmd_pool);
+        }
+        for semaphore in self.submission_complete_semaphores {
+            self.device.destroy_semaphore(semaphore);
+        }
+        for fence in self.submission_complete_fences {
+            self.device.destroy_fence(fence);
+        }
 
         self.device.destroy_shader_module(self.vs_ocean);
         self.device.destroy_shader_module(self.fs_ocean);
@@ -1396,10 +1416,17 @@ impl<B: hal::Backend> Renderer<B> {
         self.device.destroy_buffer(self.propagate_locals_buffer);
         self.device.destroy_buffer(self.correct_locals_buffer);
 
+        self.device.destroy_pipeline_layout(self.ocean_layout);
+        self.device.destroy_render_pass(self.ocean_pass);
         self.device.destroy_sampler(self.sampler);
         self.device.destroy_image(self.displacement_map);
+        self.device.destroy_image(self.depth_image);
+        self.device.destroy_image_view(self.displacement_uav);
+        self.device.destroy_image_view(self.displacement_srv);
         self.device.destroy_image_view(self.depth_view);
 
+        self.device.free_memory(self.depth_memory);
+        self.device.free_memory(self.displacement_memory);
         self.device.free_memory(self.grid_index_memory);
         self.device.free_memory(self.grid_vertex_memory);
         self.device.free_memory(self.grid_patch_memory);
@@ -1408,7 +1435,5 @@ impl<B: hal::Backend> Renderer<B> {
         self.device.free_memory(self.spectrum_memory);
         self.device.free_memory(self.propagate_locals_memory);
         self.device.free_memory(self.correct_locals_memory);
-        self.device.free_memory(self.omega_staging_memory);
-        self.device.free_memory(self.spec_staging_memory);
     }
 }

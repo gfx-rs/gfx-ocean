@@ -30,13 +30,9 @@ use winit::platform::ios::{ValidOrientations, WindowBuilderExtIOS, WindowExtIOS}
 extern crate objc;
 
 #[cfg(target_os = "ios")]
-use objc::runtime::{Class, Object};
+use objc::runtime::Object;
 
-use winit::{
-    dpi::{LogicalSize, PhysicalSize, Size},
-    event::WindowEvent,
-    event_loop::ControlFlow,
-};
+use winit::{event::WindowEvent, event_loop::ControlFlow};
 
 mod camera;
 mod fft;
@@ -49,10 +45,7 @@ pub fn run() {
     let events_loop = winit::event_loop::EventLoop::new();
     #[cfg(not(target_os = "ios"))]
     let wb = winit::window::WindowBuilder::new()
-        .with_inner_size(Size::Logical(LogicalSize {
-            width: 1200.0,
-            height: 700.0,
-        }))
+        .with_inner_size(winit::dpi::Size::Logical((1200u32, 700u32).into()))
         .with_title("ocean".to_string());
 
     #[cfg(target_os = "ios")]
@@ -62,7 +55,7 @@ pub fn run() {
     let window = wb.build(&events_loop).unwrap();
 
     #[cfg(target_os = "ios")]
-    {
+    unsafe {
         // TODO: We need this because window property from winit UIView is null
         // without this gfx can't get native scale factor when create surface
         let view: *mut Object = window.ui_view() as *const _ as *mut Object;
@@ -75,15 +68,12 @@ pub fn run() {
         }
     }
 
-    let PhysicalSize {
-        width: pixel_width,
-        height: pixel_height,
-    } = window.inner_size();
+    let (pixel_width, pixel_height): (u32, u32) = window.inner_size().into();
 
     #[rustfmt::skip]
     let mut camera = camera::Camera::new(
         glm::vec3(-8.0, 32.0, 120.0),
-        glm::vec3(-0.6, -1.5707, 0.0),
+        glm::vec3(-0.6, -1.5, 0.0),
     );
 
     let instance = back::Instance::create("gfx-ocean", 1).unwrap();
@@ -113,7 +103,8 @@ pub fn run() {
     let mut avg_cpu_time = 0.0;
 
     events_loop.run(move |event, _, control_flow| {
-        let _ = (&instance, &adapters);
+        let _ = &adapters;
+        let _ = &instance;
         *control_flow = ControlFlow::Poll;
 
         match event {
@@ -128,7 +119,6 @@ pub fn run() {
                 }
                 | WindowEvent::CloseRequested => {
                     *control_flow = ControlFlow::Exit;
-                    return;
                 }
                 WindowEvent::KeyboardInput { input, .. } => {
                     camera.handle_keyboard_event(input);
@@ -136,10 +126,7 @@ pub fn run() {
                 WindowEvent::Touch(touch) => {
                     camera.handle_touch_event(
                         touch,
-                        PhysicalSize {
-                            width: pixel_width as f64,
-                            height: pixel_height as f64,
-                        },
+                        (pixel_width, pixel_height).into(),
                         window.scale_factor(),
                     );
                 }

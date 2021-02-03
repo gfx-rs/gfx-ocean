@@ -172,6 +172,7 @@ impl<B: Backend> Propagation<B> {
         device.destroy_descriptor_set_layout(self.set_layout);
         device.destroy_pipeline_layout(self.layout);
         device.destroy_compute_pipeline(self.pipeline);
+        device.destroy_descriptor_pool(self.pool);
     }
 }
 
@@ -322,5 +323,6 @@ impl<B: Backend> Correction<B> {
         device.destroy_descriptor_set_layout(self.set_layout);
         device.destroy_pipeline_layout(self.layout);
         device.destroy_compute_pipeline(self.pipeline);
+        device.destroy_descriptor_pool(self.pool);
     }
 }
