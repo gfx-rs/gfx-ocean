@@ -1,9 +1,9 @@
-use gfx_hal::{
+use hal::{
     device::Device,
     pso::{self, DescriptorPool as _},
     Backend,
 };
-use std::io::Cursor;
+use std::{io::Cursor, iter};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PropagateLocals {
@@ -28,7 +28,7 @@ impl<B: Backend> Propagation<B> {
         ))?)?;
 
         let set_layout = device.create_descriptor_set_layout(
-            &[
+            vec![
                 pso::DescriptorSetLayoutBinding {
                     binding: 0,
                     ty: pso::DescriptorType::Buffer {
@@ -101,13 +101,14 @@ impl<B: Backend> Propagation<B> {
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
                 },
-            ],
-            &[],
+            ]
+            .into_iter(),
+            iter::empty(),
         )?;
 
         let mut pool = device.create_descriptor_pool(
             1, // sets
-            &[
+            vec![
                 pso::DescriptorRangeDesc {
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Uniform,
@@ -135,27 +136,26 @@ impl<B: Backend> Propagation<B> {
                     },
                     count: 3,
                 },
-            ],
+            ]
+            .into_iter(),
             pso::DescriptorPoolCreateFlags::empty(),
         )?;
 
-        let desc_set = pool.allocate_set(&set_layout)?;
-        let layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
-        let pipeline = {
-            let mut pipelines = device.create_compute_pipelines(
-                &[pso::ComputePipelineDesc::new(
+        let desc_set = pool.allocate_one(&set_layout)?;
+        let layout = device.create_pipeline_layout(iter::once(&set_layout), iter::empty())?;
+        let pipeline = device
+            .create_compute_pipeline(
+                &pso::ComputePipelineDesc::new(
                     pso::EntryPoint {
                         entry: "main",
                         module: &cs_propagate,
                         specialization: pso::Specialization::default(),
                     },
                     &layout,
-                )],
+                ),
                 None,
-            );
-
-            pipelines.remove(0).unwrap()
-        };
+            )
+            .unwrap();
 
         Ok(Propagation {
             cs_propagate,
@@ -196,7 +196,7 @@ impl<B: Backend> Correction<B> {
         ))?)?;
 
         let set_layout = device.create_descriptor_set_layout(
-            &[
+            vec![
                 pso::DescriptorSetLayoutBinding {
                     binding: 0,
                     ty: pso::DescriptorType::Buffer {
@@ -254,13 +254,14 @@ impl<B: Backend> Correction<B> {
                     stage_flags: pso::ShaderStageFlags::COMPUTE,
                     immutable_samplers: false,
                 },
-            ],
-            &[],
+            ]
+            .into_iter(),
+            iter::empty(),
         )?;
 
         let mut pool = device.create_descriptor_pool(
             1, // sets
-            &[
+            vec![
                 pso::DescriptorRangeDesc {
                     ty: pso::DescriptorType::Buffer {
                         ty: pso::BufferDescriptorType::Uniform,
@@ -285,27 +286,26 @@ impl<B: Backend> Correction<B> {
                     },
                     count: 1,
                 },
-            ],
+            ]
+            .into_iter(),
             pso::DescriptorPoolCreateFlags::empty(),
         )?;
 
-        let desc_set = pool.allocate_set(&set_layout)?;
-        let layout = device.create_pipeline_layout(Some(&set_layout), &[])?;
-        let pipeline = {
-            let mut pipelines = device.create_compute_pipelines(
-                &[pso::ComputePipelineDesc::new(
+        let desc_set = pool.allocate_one(&set_layout)?;
+        let layout = device.create_pipeline_layout(iter::once(&set_layout), iter::empty())?;
+        let pipeline = device
+            .create_compute_pipeline(
+                &pso::ComputePipelineDesc::new(
                     pso::EntryPoint {
                         entry: "main",
                         module: &cs_correct,
                         specialization: pso::Specialization::default(),
                     },
                     &layout,
-                )],
+                ),
                 None,
-            );
-
-            pipelines.remove(0).unwrap()
-        };
+            )
+            .unwrap();
 
         Ok(Correction {
             cs_correct,

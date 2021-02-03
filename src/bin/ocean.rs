@@ -1,3 +1,3 @@
 fn main() {
-    ocean::run().unwrap();
+    ocean::run();
 }
