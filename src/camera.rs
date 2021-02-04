@@ -1,6 +1,7 @@
-use crate::glm;
-use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event::{ElementState, KeyboardInput, Touch, TouchPhase, VirtualKeyCode};
+use winit::{
+    dpi::{PhysicalPosition, PhysicalSize},
+    event::{ElementState, KeyboardInput, Touch, TouchPhase, VirtualKeyCode},
+};
 
 #[derive(Debug, Copy, Clone)]
 enum Direction {
@@ -62,14 +63,11 @@ impl InputState {
             phase, location, ..
         } = input;
 
-        let PhysicalPosition {
-            x: touch_x,
-            y: touch_y,
-        } = location;
+        let PhysicalPosition { x: touch_x, y: _ } = location;
 
         let PhysicalSize {
             width: screen_x,
-            height: screen_y,
+            height: _,
         } = screen_size;
 
         match (phase, location) {
